@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import "@testing-library/jest-dom";
 import App from "../App";
 
 describe("App", () => {
@@ -16,12 +15,9 @@ describe("App", () => {
   it("clamps marks values to valid ranges", () => {
     render(<App />);
     fireEvent.click(screen.getByText("Mathematics"));
-    const examInputs = screen.getAllByDisplayValue(/\d+/);
-    // find an exam input by placeholder role: we set via bg-red-50 column, so pick last numeric input in row
-    // simulate typing 120 and expect computed 50% exam cell to reflect clamp to 100
-    const input = screen.getByDisplayValue("75");
-    fireEvent.change(input, { target: { value: "120" } });
-    // Now the SBA exam half should show 50.0 for 50% weighting
-    expect(screen.getByText(/50\.0/)).toBeInTheDocument();
+    const inputs = screen.getAllByRole("spinbutton");
+    const examInput = inputs[inputs.length - 1];
+    fireEvent.change(examInput, { target: { value: "120" } });
+    expect((examInput as HTMLInputElement).value).toBe("100");
   });
 });

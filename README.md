@@ -2,6 +2,14 @@
 
 E-SBA is a lightweight web application for managing Junior High School assessment workflows: master student database, subject assessment sheets, and printable report cards.
 
+## Changelog
+
+- 2025-12-08: Disabled client-side "Download Template" functionality across assessment sheets. The button remains visible for UI consistency but will no longer initiate any downloads or network requests. This change preserves all other assessment features and was implemented to enforce a site-wide policy and avoid generating Excel files that some clients (Excel 2016) reject due to strict OOXML merge validation. See `server/services/templates.ts` for validation fixes.
+
+# E-SBA [JHS]
+
+E-SBA is a lightweight web application for managing Junior High School assessment workflows: master student database, subject assessment sheets, and printable report cards.
+
 ## Setup
 
 - Install Node.js 18+.

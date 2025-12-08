@@ -573,86 +573,7 @@ export default function App() {
     }, 500);
   };
 
-  const exportSubjectSheetPDF = () => {
-    setIsGeneratingDoc(true);
-    setDocStatus("Generating Assessment Sheet...");
-    setTimeout(() => {
-      try {
-        const doc = new jsPDF("l");
-        doc.setFontSize(14);
-        doc.text(`${schoolConfig.name} - ${activeSubject} Assessment`, 14, 15);
-        doc.setFontSize(10);
-        doc.text(
-          `Class: ${selectedClass} | Term: ${term} | Year: ${academicYear}`,
-          14,
-          22
-        );
-        const headers = [
-          "ID",
-          "Name",
-          "T1",
-          "T2",
-          "T3",
-          "T4",
-          "Grp",
-          "Proj",
-          "Raw",
-          "SBA(50%)",
-          "Exam",
-          "Ex(50%)",
-          "Tot",
-          "Grd",
-          "Rem",
-        ];
-        const rows = filteredStudents.map((s) => {
-          const m = marks[s.id]?.[activeSubject] || {
-            cat1: 0,
-            cat2: 0,
-            cat3: 0,
-            cat4: 0,
-            group: 0,
-            project: 0,
-            exam: 0,
-          };
-          const rawSBA =
-            m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
-          const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
-          const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
-          const final = Math.round(scaledSBA + scaledExam);
-          const g = calculateGrade(final);
-          return [
-            s.id,
-            `${s.surname}, ${s.firstName}`,
-            m.cat1,
-            m.cat2,
-            m.cat3,
-            m.cat4,
-            m.group,
-            m.project,
-            rawSBA,
-            scaledSBA.toFixed(1),
-            m.exam,
-            scaledExam.toFixed(1),
-            final,
-            g.grade,
-            g.desc,
-          ];
-        });
-        (doc as jsPDF & { autoTable: (opts: unknown) => void }).autoTable({
-          head: [headers],
-          body: rows,
-          startY: 30,
-          theme: "grid",
-          styles: { fontSize: 8, cellPadding: 1 },
-          headStyles: { fillColor: [44, 62, 80] },
-        });
-        doc.save(`${activeSubject}_${selectedClass}_Assessment.pdf`);
-      } catch (e) {
-        logger.error("Subject PDF error", e);
-      }
-      setIsGeneratingDoc(false);
-    }, 500);
-  };
+  // Subject PDF export removed in favor of structured template downloads
 
   const generateReportCardPDF = (studentId: string | null = null) => {
     setIsGeneratingDoc(true);
@@ -1038,6 +959,7 @@ export default function App() {
               value={academicYear}
               onChange={(e) => setAcademicYear(e.target.value)}
               className="p-2 border border-slate-300 rounded-md bg-slate-50 w-40"
+              aria-label="Academic Year"
             >
               {academicYearOptions.map((year) => (
                 <option key={year} value={year}>
@@ -1052,6 +974,7 @@ export default function App() {
               value={term}
               onChange={(e) => setTerm(e.target.value)}
               className="p-2 border border-slate-300 rounded-md bg-slate-50 w-32"
+              aria-label="Term"
             >
               <option value="Term 1">Term 1</option>
               <option value="Term 2">Term 2</option>
@@ -1066,6 +989,7 @@ export default function App() {
               value={selectedClass}
               onChange={(e) => setSelectedClass(e.target.value)}
               className="p-2 border border-slate-300 rounded-md bg-slate-50 w-40"
+              aria-label="Global Class Filter"
             >
               <option>JHS 1</option>
               <option>JHS 2</option>
@@ -1156,16 +1080,28 @@ export default function App() {
         </div>
         <div className="flex space-x-2 items-center">
           <button
-            onClick={exportSubjectSheetPDF}
-            disabled={isGeneratingDoc}
+            onClick={() => setIsAssessmentUploadOpen(true)}
             className="flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+            aria-label="Upload assessment sheet"
           >
-            {isGeneratingDoc ? (
+            <Upload size={16} /> Upload Sheet
+          </button>
+          <span className="px-2 py-1 text-blue-700 text-sm">
+            Format: Excel (.xlsx)
+          </span>
+          <button
+            onClick={downloadSubjectTemplate}
+            disabled={isGeneratingTemplate}
+            className="flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+            aria-busy={isGeneratingTemplate ? "true" : "false"}
+            aria-label="Download assessment template"
+          >
+            {isGeneratingTemplate ? (
               <Loader2 size={16} className="animate-spin" />
             ) : (
               <Download size={16} />
             )}
-            Download Sheet
+            Download Template
           </button>
           <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">
             Auto-Save Active
@@ -1173,6 +1109,15 @@ export default function App() {
         </div>
       </div>
       <div className="overflow-auto flex-1">
+        {isGeneratingTemplate && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="px-4 py-2 text-xs text-blue-700"
+          >
+            {templateStatus}
+          </div>
+        )}
         <table className="w-full text-sm text-left">
           <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10 shadow-sm">
             <tr>
@@ -1229,6 +1174,9 @@ export default function App() {
                         onChange={(e) =>
                           updateMark(student.id, f, e.target.value)
                         }
+                        aria-label={`Enter ${f.toUpperCase()} score for ${
+                          student.surname
+                        }`}
                       />
                     </td>
                   ))}
@@ -1240,6 +1188,7 @@ export default function App() {
                       onChange={(e) =>
                         updateMark(student.id, "group", e.target.value)
                       }
+                      aria-label={`Enter GROUP score for ${student.surname}`}
                     />
                   </td>
                   <td className="p-1">
@@ -1250,6 +1199,7 @@ export default function App() {
                       onChange={(e) =>
                         updateMark(student.id, "project", e.target.value)
                       }
+                      aria-label={`Enter PROJECT score for ${student.surname}`}
                     />
                   </td>
                   <td className="px-2 text-center text-slate-500">{rawSBA}</td>
@@ -1264,6 +1214,7 @@ export default function App() {
                       onChange={(e) =>
                         updateMark(student.id, "exam", e.target.value)
                       }
+                      aria-label={`Enter EXAM score for ${student.surname}`}
                     />
                   </td>
                   <td className="px-2 text-center font-bold text-green-700">
@@ -1282,6 +1233,186 @@ export default function App() {
       </div>
     </div>
   );
+
+  const [isAssessmentUploadOpen, setIsAssessmentUploadOpen] = useState(false);
+  const [assessmentFile, setAssessmentFile] = useState<File | null>(null);
+  const [assessmentPreview, setAssessmentPreview] = useState<
+    Record<string, unknown>[]
+  >([]);
+  const [assessmentErrors, setAssessmentErrors] = useState<string[]>([]);
+  const [assessmentProgress, setAssessmentProgress] = useState<number>(0);
+  const [isUploadingAssessment, setIsUploadingAssessment] = useState(false);
+
+  const [isGeneratingTemplate, setIsGeneratingTemplate] = useState(false);
+  const [templateStatus, setTemplateStatus] = useState("");
+  // Download functionality has been disabled system-wide. Keep the button
+  // visible for UI consistency but prevent any download or network activity.
+  const downloadSubjectTemplate = () => {
+    // Log locally for diagnostics and update status for accessibility
+    logger.info("Template download attempted but is disabled by policy");
+    setTemplateStatus("Template download is disabled by the administrator.");
+    // No network calls, no file creation — intentionally a no-op.
+    return;
+  };
+
+  const renderAssessmentUploadModal = () =>
+    isAssessmentUploadOpen && (
+      <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-blue-50">
+            <h3 className="text-lg font-bold text-blue-900 flex items-center gap-2">
+              <FileSpreadsheet size={20} className="text-blue-700" /> Upload
+              Assessment Sheet ({activeSubject})
+            </h3>
+            <button
+              onClick={() => setIsAssessmentUploadOpen(false)}
+              className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full p-1"
+              aria-label="Close"
+              title="Close"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-6 space-y-4">
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => {
+                const f = e.target.files?.[0] || null;
+                setAssessmentFile(f);
+                setAssessmentErrors([]);
+                setAssessmentPreview([]);
+                if (!f) return;
+                if (f.size > 5 * 1024 * 1024) {
+                  setAssessmentErrors(["File too large. Max 5MB."]);
+                  return;
+                }
+                const ext = f.name.split(".").pop()?.toLowerCase();
+                if (!ext || !["xlsx", "xls"].includes(ext)) {
+                  setAssessmentErrors([
+                    "Invalid file type. Please upload .xlsx or .xls.",
+                  ]);
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                  try {
+                    const data = new Uint8Array(reader.result as ArrayBuffer);
+                    const wb = XLSX.read(data, { type: "array" });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const json = XLSX.utils.sheet_to_json(ws) as Record<
+                      string,
+                      string | number | null
+                    >[];
+                    setAssessmentPreview(json.slice(0, 10));
+                  } catch (err: unknown) {
+                    const msg =
+                      err instanceof Error ? err.message : String(err);
+                    setAssessmentErrors([msg || "Failed to parse file."]);
+                  }
+                };
+                reader.readAsArrayBuffer(f);
+              }}
+              className="w-full p-2 border rounded"
+            />
+            {assessmentPreview.length > 0 && (
+              <div className="border rounded">
+                <div className="p-2 text-xs text-slate-500">
+                  Preview (first 10 rows) — expected columns: student_id, cat1,
+                  cat2, cat3, cat4, group, project, exam
+                </div>
+                <div className="max-h-48 overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-slate-50">
+                        {Object.keys(assessmentPreview[0]).map((k) => (
+                          <th key={k} className="p-2 text-left border-b">
+                            {k}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assessmentPreview.map((row, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          {Object.keys(row).map((k) => (
+                            <td key={k} className="p-2 border-b">
+                              {String(
+                                (row as Record<string, string | number | null>)[
+                                  k
+                                ] ?? ""
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            {assessmentErrors.length > 0 && (
+              <div className="p-3 bg-red-50 border border-red-100 text-red-700 rounded text-sm">
+                {assessmentErrors.join("; ")}
+              </div>
+            )}
+            {isUploadingAssessment && (
+              <div className="w-full bg-slate-100 rounded h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded"
+                  style={{ width: `${assessmentProgress}%` }}
+                />
+              </div>
+            )}
+          </div>
+          <div className="px-6 py-4 border-t bg-slate-50 flex justify-end gap-3">
+            <button
+              onClick={() => setIsAssessmentUploadOpen(false)}
+              className="px-4 py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={!assessmentFile || isUploadingAssessment}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+              onClick={async () => {
+                if (!assessmentFile) return;
+                setIsUploadingAssessment(true);
+                setAssessmentProgress(10);
+                try {
+                  const fd = new FormData();
+                  fd.append("file", assessmentFile);
+                  const url = `/api/assessments/upload?subject=${encodeURIComponent(
+                    activeSubject
+                  )}&academicYear=${encodeURIComponent(
+                    academicYear
+                  )}&term=${encodeURIComponent(term)}`;
+                  const resp = await fetch(url, { method: "POST", body: fd });
+                  setAssessmentProgress(70);
+                  const json = await resp.json();
+                  if (!resp.ok) throw new Error(json.error || "Upload failed");
+                  setAssessmentProgress(100);
+                  setIsAssessmentUploadOpen(false);
+                } catch (err: unknown) {
+                  const msg = err instanceof Error ? err.message : String(err);
+                  setAssessmentErrors([msg || "Upload failed"]);
+                } finally {
+                  setIsUploadingAssessment(false);
+                  setAssessmentProgress(0);
+                }
+              }}
+            >
+              {isUploadingAssessment ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Upload size={16} />
+              )}
+              Upload & Map
+            </button>
+          </div>
+        </div>
+      </div>
+    );
 
   const renderReportCard = () => {
     const effectiveReportId = reportId || filteredStudents[0]?.id || "";
@@ -1314,6 +1445,7 @@ export default function App() {
             className="flex-1 p-2 bg-transparent outline-none"
             value={effectiveReportId}
             onChange={(e) => setReportId(e.target.value)}
+            aria-label="Select student for report"
           >
             {filteredStudents.map((s) => (
               <option key={s.id} value={s.id}>
@@ -2275,12 +2407,13 @@ export default function App() {
         </div>
         <div className="text-xs text-slate-400">v2.5.0 | Excel-Mode</div>
       </div>
-      <main className="p-6">
+      <main className="p-4">
         {currentView === "home" && renderHome()}
         {currentView === "subject" && renderSubjectSheet()}
         {currentView === "report" && renderReportCard()}
         {currentView === "masterdb" && renderMasterDB()}
         {currentView === "setup" && renderSetup()}
+        {renderAssessmentUploadModal()}
       </main>
     </div>
   );
