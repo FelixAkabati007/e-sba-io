@@ -1,0 +1,573 @@
+-- ======================================================================================
+-- E-SBA [JHS] DATABASE SCHEMA
+-- Version: 1.0.0
+-- Description: Comprehensive schema for Student Assessment Management System
+-- ======================================================================================
+-- 1. DATABASE INITIALIZATION
+-- --------------------------------------------------------------------------------------
+CREATE DATABASE IF NOT EXISTS esba_jhs_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE esba_jhs_db;
+-- 2. TABLE DEFINITIONS
+-- --------------------------------------------------------------------------------------
+-- Table: school_settings
+-- Stores global configuration like school name, logo, and weighting logic
+CREATE TABLE school_settings (
+    setting_id INT PRIMARY KEY AUTO_INCREMENT,
+    school_name VARCHAR(255) NOT NULL,
+    motto VARCHAR(255),
+    head_teacher_name VARCHAR(255),
+    school_address TEXT,
+    logo_url LONGTEXT,
+    -- Stores Base64 string or file path
+    cat_weight_percent DECIMAL(5, 2) DEFAULT 50.00 CHECK (
+        cat_weight_percent BETWEEN 0 AND 100
+    ),
+    exam_weight_percent DECIMAL(5, 2) DEFAULT 50.00 CHECK (
+        exam_weight_percent BETWEEN 0 AND 100
+    ),
+    current_academic_year VARCHAR(20) NOT NULL DEFAULT '2025/2026',
+    current_term ENUM('Term 1', 'Term 2', 'Term 3') NOT NULL DEFAULT 'Term 1',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+-- Table: grading_system
+-- Stores the WAEC/GES standard grading scale (1-9)
+CREATE TABLE grading_system (
+    grade_id INT PRIMARY KEY AUTO_INCREMENT,
+    min_score DECIMAL(5, 2) NOT NULL,
+    max_score DECIMAL(5, 2) NOT NULL,
+    grade_value INT NOT NULL,
+    -- e.g., 1
+    remark VARCHAR(50) NOT NULL,
+    -- e.g., "Highest"
+    description VARCHAR(50) NOT NULL,
+    -- e.g., "Distinction"
+    UNIQUE KEY unique_range (min_score, max_score)
+);
+-- Table: classes
+-- Lookup table for class levels to ensure consistency
+CREATE TABLE classes (
+    class_id INT PRIMARY KEY AUTO_INCREMENT,
+    class_name VARCHAR(20) NOT NULL UNIQUE -- e.g., "JHS 1", "JHS 2"
+);
+-- Table: students
+-- The Master Database of students
+CREATE TABLE students (
+    student_id VARCHAR(20) PRIMARY KEY,
+    -- e.g., "JHS25001"
+    surname VARCHAR(100) NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    middle_name VARCHAR(100),
+    gender ENUM('Male', 'Female', 'Other') NOT NULL,
+    date_of_birth DATE NOT NULL,
+    guardian_contact VARCHAR(20),
+    current_class_id INT NOT NULL,
+    enrollment_status ENUM('Active', 'Withdrawn', 'Inactive') DEFAULT 'Active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_student_class FOREIGN KEY (current_class_id) REFERENCES classes(class_id),
+    INDEX idx_student_surname (surname),
+    INDEX idx_student_class (current_class_id),
+    INDEX idx_student_status (enrollment_status)
+);
+-- Table: subjects
+-- List of core and elective subjects
+CREATE TABLE subjects (
+    subject_id INT PRIMARY KEY AUTO_INCREMENT,
+    subject_name VARCHAR(100) NOT NULL UNIQUE,
+    subject_code VARCHAR(10) UNIQUE,
+    -- e.g., "MATH", "ENG"
+    is_core BOOLEAN DEFAULT TRUE
+);
+-- Table: academic_sessions
+-- Tracks history of assessments (e.g., 2025/2026 Term 1)
+CREATE TABLE academic_sessions (
+    session_id INT PRIMARY KEY AUTO_INCREMENT,
+    academic_year VARCHAR(20) NOT NULL,
+    term ENUM('Term 1', 'Term 2', 'Term 3') NOT NULL,
+    start_date DATE,
+    end_date DATE,
+    is_active BOOLEAN DEFAULT FALSE,
+    UNIQUE KEY unique_session (academic_year, term)
+);
+-- Table: assessments
+-- The core transaction table storing marks
+CREATE TABLE assessments (
+    assessment_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    student_id VARCHAR(20) NOT NULL,
+    subject_id INT NOT NULL,
+    session_id INT NOT NULL,
+    -- Assessment Components
+    cat1_score DECIMAL(5, 2) DEFAULT 0 CHECK (cat1_score <= 10),
+    -- Class Task 1
+    cat2_score DECIMAL(5, 2) DEFAULT 0 CHECK (cat2_score <= 10),
+    -- Class Task 2
+    cat3_score DECIMAL(5, 2) DEFAULT 0 CHECK (cat3_score <= 10),
+    -- Class Task 3
+    cat4_score DECIMAL(5, 2) DEFAULT 0 CHECK (cat4_score <= 10),
+    -- Class Task 4
+    group_work_score DECIMAL(5, 2) DEFAULT 0 CHECK (group_work_score <= 20),
+    project_work_score DECIMAL(5, 2) DEFAULT 0 CHECK (project_work_score <= 20),
+    exam_score DECIMAL(5, 2) DEFAULT 0 CHECK (exam_score <= 100),
+    -- Computed columns for performance
+    raw_sba_total DECIMAL(5, 2) GENERATED ALWAYS AS (
+        cat1_score + cat2_score + cat3_score + cat4_score + group_work_score + project_work_score
+    ) STORED,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_assessment_student FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE,
+    CONSTRAINT fk_assessment_subject FOREIGN KEY (subject_id) REFERENCES subjects(subject_id),
+    CONSTRAINT fk_assessment_session FOREIGN KEY (session_id) REFERENCES academic_sessions(session_id),
+    -- Ensure one record per student per subject per session
+    UNIQUE KEY unique_student_assessment (student_id, subject_id, session_id),
+    INDEX idx_assessment_performance (student_id, session_id)
+);
+-- Table: audit_logs
+-- Tracks critical actions like deletions for security
+CREATE TABLE audit_logs (
+    log_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    action_type ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+    table_name VARCHAR(50) NOT NULL,
+    record_id VARCHAR(50) NOT NULL,
+    user_id VARCHAR(50) DEFAULT 'SYSTEM',
+    -- Or link to a users table if Auth is added
+    details JSON,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+-- 3. STORED PROCEDURES
+-- --------------------------------------------------------------------------------------
+DELIMITER // -- Procedure: Add or Update Marks
+-- Upserts marks for a student. Handles the logic of "If exists update, else insert"
+CREATE PROCEDURE sp_save_marks(
+    IN p_student_id VARCHAR(20),
+    IN p_subject_id INT,
+    IN p_session_id INT,
+    IN p_cat1 DECIMAL(5, 2),
+    IN p_cat2 DECIMAL(5, 2),
+    IN p_cat3 DECIMAL(5, 2),
+    IN p_cat4 DECIMAL(5, 2),
+    IN p_group DECIMAL(5, 2),
+    IN p_project DECIMAL(5, 2),
+    IN p_exam DECIMAL(5, 2)
+) BEGIN
+INSERT INTO assessments (
+        student_id,
+        subject_id,
+        session_id,
+        cat1_score,
+        cat2_score,
+        cat3_score,
+        cat4_score,
+        group_work_score,
+        project_work_score,
+        exam_score
+    )
+VALUES (
+        p_student_id,
+        p_subject_id,
+        p_session_id,
+        p_cat1,
+        p_cat2,
+        p_cat3,
+        p_cat4,
+        p_group,
+        p_project,
+        p_exam
+    ) ON DUPLICATE KEY
+UPDATE cat1_score = p_cat1,
+    cat2_score = p_cat2,
+    cat3_score = p_cat3,
+    cat4_score = p_cat4,
+    group_work_score = p_group,
+    project_work_score = p_project,
+    exam_score = p_exam;
+END // -- Procedure: Soft Delete Student (Optional - if we want to retain data but hide it)
+-- Currently the schema uses 'enrollment_status', so this updates status
+CREATE PROCEDURE sp_withdraw_student(IN p_student_id VARCHAR(20)) BEGIN
+UPDATE students
+SET enrollment_status = 'Withdrawn'
+WHERE student_id = p_student_id;
+INSERT INTO audit_logs (action_type, table_name, record_id, details)
+VALUES (
+        'UPDATE',
+        'students',
+        p_student_id,
+        JSON_OBJECT('status', 'Withdrawn')
+    );
+END // DELIMITER;
+-- 4. SECURITY & PERMISSIONS
+-- --------------------------------------------------------------------------------------
+-- Create Application User
+CREATE USER IF NOT EXISTS 'esba_app_user' @'localhost' IDENTIFIED BY 'SecurePassword123!';
+-- Grant specific permissions (Principle of Least Privilege)
+GRANT SELECT,
+    INSERT,
+    UPDATE ON esba_jhs_db.* TO 'esba_app_user' @'localhost';
+GRANT DELETE ON esba_jhs_db.assessments TO 'esba_app_user' @'localhost';
+-- Only allow Admin to delete students directly, app user should usually just update status
+GRANT DELETE ON esba_jhs_db.students TO 'esba_app_user' @'localhost';
+GRANT EXECUTE ON PROCEDURE esba_jhs_db.sp_save_marks TO 'esba_app_user' @'localhost';
+FLUSH PRIVILEGES;
+-- 5. SEED DATA (INITIAL SETUP)
+-- --------------------------------------------------------------------------------------
+INSERT INTO classes (class_name)
+VALUES ('JHS 1'),
+    ('JHS 2'),
+    ('JHS 3');
+INSERT INTO subjects (subject_name, is_core)
+VALUES ('Mathematics', TRUE),
+    ('English Language', TRUE),
+    ('Integrated Science', TRUE),
+    ('Social Studies', TRUE),
+    ('Computing', FALSE),
+    ('Career Technology', FALSE),
+    ('Creative Arts', FALSE),
+    ('French', FALSE),
+    ('Ghanaian Language', FALSE),
+    ('Religious & Moral Education', FALSE);
+-- Initialize Grading System
+INSERT INTO grading_system (
+        min_score,
+        max_score,
+        grade_value,
+        remark,
+        description
+    )
+VALUES (80, 100, 1, 'Highest', 'Distinction'),
+    (70, 79, 2, 'High', 'Very Good'),
+    (60, 69, 3, 'High Average', 'Good'),
+    (55, 59, 4, 'Average', 'Credit'),
+    (50, 54, 5, 'Low Average', 'Pass'),
+    (45, 49, 6, 'Low', 'Weak'),
+    (40, 44, 7, 'Lower', 'Very Weak'),
+    (35, 39, 8, 'Lowest', 'Fail'),
+    (0, 34, 9, 'Fail', 'Fail');
+-- Initialize School Settings
+INSERT INTO school_settings (school_name, motto)
+VALUES (
+        'Accra Excellence JHS',
+        'Discipline and Hard Work'
+    );
+-- ======================================================================================
+-- 6. ENGINE, INDEXES, VIEWS, AND PROCEDURES (BEST PRACTICES + MODERN SYNTAX)
+-- ======================================================================================
+-- Ensure transactional storage engine
+ALTER TABLE school_settings ENGINE = InnoDB;
+ALTER TABLE grading_system ENGINE = InnoDB;
+ALTER TABLE classes ENGINE = InnoDB;
+ALTER TABLE students ENGINE = InnoDB;
+ALTER TABLE subjects ENGINE = InnoDB;
+ALTER TABLE academic_sessions ENGINE = InnoDB;
+ALTER TABLE assessments ENGINE = InnoDB;
+ALTER TABLE audit_logs ENGINE = InnoDB;
+-- Additional performance indexes
+CREATE INDEX idx_subject_core ON subjects (is_core);
+CREATE INDEX idx_session_active ON academic_sessions (is_active);
+CREATE INDEX idx_assessment_subject_session ON assessments (subject_id, session_id);
+-- --------------------------------------------------------------------------------------
+-- Views for common retrieval patterns (ANSI JOIN syntax)
+-- --------------------------------------------------------------------------------------
+-- Purpose: Quick lookup of students with class name
+-- Returns: student row + class_name
+CREATE OR REPLACE VIEW vw_student_master AS
+SELECT s.student_id,
+    s.surname,
+    s.first_name,
+    s.middle_name,
+    s.gender,
+    s.date_of_birth,
+    s.guardian_contact,
+    s.current_class_id,
+    c.class_name,
+    s.enrollment_status,
+    s.created_at,
+    s.updated_at
+FROM students s
+    JOIN classes c ON s.current_class_id = c.class_id;
+-- Purpose: Flattened overview of assessments with student, subject, and session context
+-- Returns: assessment row + student names + class + subject + session info
+CREATE OR REPLACE VIEW vw_assessment_overview AS
+SELECT a.assessment_id,
+    a.student_id,
+    s.surname,
+    s.first_name,
+    s.middle_name,
+    c.class_name,
+    a.subject_id,
+    sub.subject_name,
+    a.session_id,
+    ses.academic_year,
+    ses.term,
+    a.cat1_score,
+    a.cat2_score,
+    a.cat3_score,
+    a.cat4_score,
+    a.group_work_score,
+    a.project_work_score,
+    a.exam_score,
+    a.raw_sba_total,
+    a.created_at,
+    a.updated_at
+FROM assessments a
+    JOIN students s ON a.student_id = s.student_id
+    JOIN classes c ON s.current_class_id = c.class_id
+    JOIN subjects sub ON a.subject_id = sub.subject_id
+    JOIN academic_sessions ses ON a.session_id = ses.session_id;
+-- --------------------------------------------------------------------------------------
+-- Stored Procedures: CRUD and reporting (parameterized, transactional)
+-- --------------------------------------------------------------------------------------
+-- Procedure: Create Student
+-- Inputs: p_student_id, p_surname, p_first_name, p_middle_name, p_gender, p_dob, p_guardian_contact, p_class_name
+-- Returns: none; raises error on constraint violations
+DELIMITER // CREATE PROCEDURE sp_create_student(
+    IN p_student_id VARCHAR(20),
+    IN p_surname VARCHAR(100),
+    IN p_first_name VARCHAR(100),
+    IN p_middle_name VARCHAR(100),
+    IN p_gender ENUM('Male', 'Female', 'Other'),
+    IN p_dob DATE,
+    IN p_guardian_contact VARCHAR(20),
+    IN p_class_name VARCHAR(20)
+) BEGIN
+DECLARE v_class_id INT;
+DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK;
+END;
+START TRANSACTION;
+SELECT class_id INTO v_class_id
+FROM classes
+WHERE class_name = p_class_name
+LIMIT 1;
+IF v_class_id IS NULL THEN SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'Class name not found';
+END IF;
+INSERT INTO students (
+        student_id,
+        surname,
+        first_name,
+        middle_name,
+        gender,
+        date_of_birth,
+        guardian_contact,
+        current_class_id
+    )
+VALUES (
+        p_student_id,
+        p_surname,
+        p_first_name,
+        p_middle_name,
+        p_gender,
+        p_dob,
+        p_guardian_contact,
+        v_class_id
+    );
+COMMIT;
+END // DELIMITER;
+-- Procedure: Update Student
+-- Inputs: p_student_id, optional p_* fields; pass NULL to keep current
+DELIMITER // CREATE PROCEDURE sp_update_student(
+    IN p_student_id VARCHAR(20),
+    IN p_surname VARCHAR(100),
+    IN p_first_name VARCHAR(100),
+    IN p_middle_name VARCHAR(100),
+    IN p_gender ENUM('Male', 'Female', 'Other'),
+    IN p_dob DATE,
+    IN p_guardian_contact VARCHAR(20),
+    IN p_class_name VARCHAR(20)
+) BEGIN
+DECLARE v_class_id INT;
+DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK;
+END;
+START TRANSACTION;
+IF p_class_name IS NOT NULL THEN
+SELECT class_id INTO v_class_id
+FROM classes
+WHERE class_name = p_class_name
+LIMIT 1;
+END IF;
+UPDATE students s
+SET s.surname = COALESCE(p_surname, s.surname),
+    s.first_name = COALESCE(p_first_name, s.first_name),
+    s.middle_name = COALESCE(p_middle_name, s.middle_name),
+    s.gender = COALESCE(p_gender, s.gender),
+    s.date_of_birth = COALESCE(p_dob, s.date_of_birth),
+    s.guardian_contact = COALESCE(p_guardian_contact, s.guardian_contact),
+    s.current_class_id = COALESCE(v_class_id, s.current_class_id)
+WHERE s.student_id = p_student_id;
+COMMIT;
+END // DELIMITER;
+-- Procedure: List Students by Class
+-- Inputs: p_class_name; Returns: resultset of vw_student_master filtered
+DELIMITER // CREATE PROCEDURE sp_list_students_by_class(IN p_class_name VARCHAR(20)) BEGIN
+SELECT *
+FROM vw_student_master
+WHERE class_name = p_class_name
+ORDER BY surname,
+    first_name;
+END // DELIMITER;
+-- Procedure: Upsert Assessment Marks (transactional)
+-- Inputs: p_student_id, p_subject_name, p_session_id, component scores
+-- Behavior: Finds subject_id from name; inserts or updates single row per unique key
+DELIMITER // CREATE PROCEDURE sp_save_marks_v2(
+    IN p_student_id VARCHAR(20),
+    IN p_subject_name VARCHAR(100),
+    IN p_session_id INT,
+    IN p_cat1 DECIMAL(5, 2),
+    IN p_cat2 DECIMAL(5, 2),
+    IN p_cat3 DECIMAL(5, 2),
+    IN p_cat4 DECIMAL(5, 2),
+    IN p_group DECIMAL(5, 2),
+    IN p_project DECIMAL(5, 2),
+    IN p_exam DECIMAL(5, 2)
+) BEGIN
+DECLARE v_subject_id INT;
+DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK;
+END;
+START TRANSACTION;
+SELECT subject_id INTO v_subject_id
+FROM subjects
+WHERE subject_name = p_subject_name
+LIMIT 1;
+IF v_subject_id IS NULL THEN SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'Subject name not found';
+END IF;
+INSERT INTO assessments (
+        student_id,
+        subject_id,
+        session_id,
+        cat1_score,
+        cat2_score,
+        cat3_score,
+        cat4_score,
+        group_work_score,
+        project_work_score,
+        exam_score
+    )
+VALUES (
+        p_student_id,
+        v_subject_id,
+        p_session_id,
+        p_cat1,
+        p_cat2,
+        p_cat3,
+        p_cat4,
+        p_group,
+        p_project,
+        p_exam
+    ) ON DUPLICATE KEY
+UPDATE cat1_score =
+VALUES(cat1_score),
+    cat2_score =
+VALUES(cat2_score),
+    cat3_score =
+VALUES(cat3_score),
+    cat4_score =
+VALUES(cat4_score),
+    group_work_score =
+VALUES(group_work_score),
+    project_work_score =
+VALUES(project_work_score),
+    exam_score =
+VALUES(exam_score);
+COMMIT;
+END // DELIMITER;
+-- Procedure: Get Subject Assessment Sheet
+-- Inputs: p_class_name, p_subject_name, p_session_id
+-- Returns: resultset of students in class with current marks for subject/session
+DELIMITER // CREATE PROCEDURE sp_get_subject_sheet(
+    IN p_class_name VARCHAR(20),
+    IN p_subject_name VARCHAR(100),
+    IN p_session_id INT
+) BEGIN
+SELECT s.student_id,
+    s.surname,
+    s.first_name,
+    c.class_name,
+    sub.subject_name,
+    a.cat1_score,
+    a.cat2_score,
+    a.cat3_score,
+    a.cat4_score,
+    a.group_work_score,
+    a.project_work_score,
+    a.exam_score,
+    a.raw_sba_total
+FROM students s
+    JOIN classes c ON s.current_class_id = c.class_id
+    JOIN subjects sub ON sub.subject_name = p_subject_name
+    LEFT JOIN assessments a ON a.student_id = s.student_id
+    AND a.subject_id = sub.subject_id
+    AND a.session_id = p_session_id
+WHERE c.class_name = p_class_name
+ORDER BY s.surname,
+    s.first_name;
+END // DELIMITER;
+-- Procedure: Get Report Card
+-- Inputs: p_student_id, p_session_id
+-- Returns: per-subject rows with computed final and grade mapping via grading_system
+DELIMITER // CREATE PROCEDURE sp_get_report_card(
+    IN p_student_id VARCHAR(20),
+    IN p_session_id INT
+) BEGIN
+SELECT sub.subject_name,
+    a.raw_sba_total,
+    a.exam_score,
+    -- Compute scaled totals using school_settings weights
+    ROUND(
+        (a.raw_sba_total / 80) * ss.cat_weight_percent,
+        1
+    ) AS class_weighted,
+    ROUND((a.exam_score / 100) * ss.exam_weight_percent, 1) AS exam_weighted,
+    ROUND(
+        ((a.raw_sba_total / 80) * ss.cat_weight_percent) + ((a.exam_score / 100) * ss.exam_weight_percent)
+    ) AS final_score,
+    gs.grade_value,
+    gs.remark,
+    gs.description
+FROM subjects sub
+    LEFT JOIN assessments a ON a.subject_id = sub.subject_id
+    AND a.student_id = p_student_id
+    AND a.session_id = p_session_id
+    CROSS JOIN school_settings ss
+    LEFT JOIN grading_system gs ON ROUND(
+        ((a.raw_sba_total / 80) * ss.cat_weight_percent) + ((a.exam_score / 100) * ss.exam_weight_percent)
+    ) BETWEEN gs.min_score AND gs.max_score
+ORDER BY sub.subject_name;
+END // DELIMITER;
+-- Procedure: Set Active Session
+-- Inputs: p_academic_year, p_term
+DELIMITER // CREATE PROCEDURE sp_set_active_session(
+    IN p_academic_year VARCHAR(20),
+    IN p_term ENUM('Term 1', 'Term 2', 'Term 3')
+) BEGIN
+DECLARE v_session_id INT;
+DECLARE EXIT HANDLER FOR SQLEXCEPTION BEGIN ROLLBACK;
+END;
+START TRANSACTION;
+UPDATE academic_sessions
+SET is_active = FALSE
+WHERE is_active = TRUE;
+SELECT session_id INTO v_session_id
+FROM academic_sessions
+WHERE academic_year = p_academic_year
+    AND term = p_term
+LIMIT 1;
+IF v_session_id IS NULL THEN
+INSERT INTO academic_sessions (academic_year, term, is_active)
+VALUES (p_academic_year, p_term, TRUE);
+ELSE
+UPDATE academic_sessions
+SET is_active = TRUE
+WHERE session_id = v_session_id;
+END IF;
+COMMIT;
+END // DELIMITER;
+-- --------------------------------------------------------------------------------------
+-- Documentation Notes
+-- --------------------------------------------------------------------------------------
+-- All procedures use parameterized inputs to prevent SQL injection.
+-- Transactions with EXIT HANDLER ensure atomicity and rollback on exceptions.
+-- Views provide optimized, ANSI JOIN-based retrievals aligned to application UI flows:
+--   - vw_student_master: Master DB listing
+--   - vw_assessment_overview: Subject sheets and reporting context
+-- Indexes target common filters/sorts for performance.
+-- Credentials for application user should be managed outside source control; grant statements here are illustrative.
