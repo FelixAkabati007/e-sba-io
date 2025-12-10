@@ -1295,7 +1295,7 @@ export default function App() {
             onClick={downloadSubjectTemplate}
             disabled={isGeneratingTemplate}
             className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
-            aria-busy={isGeneratingTemplate}
+            aria-busy={isGeneratingTemplate ? "true" : "false"}
             aria-label="Download assessment template"
           >
             {isGeneratingTemplate ? (
@@ -1912,7 +1912,9 @@ export default function App() {
             </button>
             <button
               disabled={!assessmentFile || isUploadingAssessment}
-              aria-disabled={!assessmentFile || isUploadingAssessment}
+              aria-disabled={
+                !assessmentFile || isUploadingAssessment ? "true" : "false"
+              }
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
               onClick={async () => {
                 if (!assessmentFile) return;
@@ -2328,7 +2330,7 @@ export default function App() {
                   talentRemarkError ? "border-red-500" : "border-slate-300"
                 }`}
                 aria-label="Talent and interest remark"
-                aria-invalid={!!talentRemarkError}
+                aria-invalid={talentRemarkError ? "true" : "false"}
                 required
               >
                 <option value="" title="Required">
