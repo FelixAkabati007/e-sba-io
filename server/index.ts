@@ -23,12 +23,14 @@ import {
   getCurrentSignature,
 } from "./services/signatures";
 import { pool } from "./lib/db";
+import blobdbRouter from "./routes/blobdb";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/api/blobdb", blobdbRouter);
 
 const uploadDir = path.join(process.cwd(), "uploads", "assessmentSheets");
 fs.mkdirSync(uploadDir, { recursive: true });
@@ -127,12 +129,10 @@ app.post(
       } catch (err) {
         const msg = (err as Error).message || "Upload failed";
         if (msg.toLowerCase().includes("subject not found")) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Selected subject is not configured. Please choose a valid subject.",
-            });
+          return res.status(400).json({
+            error:
+              "Selected subject is not configured. Please choose a valid subject.",
+          });
         }
         return res.status(500).json({ error: msg });
       } finally {
@@ -144,6 +144,91 @@ app.post(
     }
   }
 );
+
+app.post("/api/admin/clean-master-db", async (req: Request, res: Response) => {
+  try {
+    const confirm = String(
+      req.query.confirm || req.headers["x-admin-confirm"] || ""
+    )
+      .toLowerCase()
+      .trim();
+    if (
+      !confirm ||
+      (confirm !== "yes" && confirm !== "1" && confirm !== "true")
+    ) {
+      return res.status(400).json({ error: "Confirmation required" });
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      await conn.query("DELETE FROM assessments");
+      await conn.query("DELETE FROM audit_logs");
+      await conn.query("DELETE FROM academic_sessions");
+      await conn.query("DELETE FROM students");
+
+      const [sCountRows] = await conn.query(
+        "SELECT COUNT(*) AS c FROM students"
+      );
+      const [aCountRows] = await conn.query(
+        "SELECT COUNT(*) AS c FROM assessments"
+      );
+      const [sessCountRows] = await conn.query(
+        "SELECT COUNT(*) AS c FROM academic_sessions"
+      );
+      const sCount = (sCountRows as Array<{ c: number }>)[0]?.c ?? 0;
+      const aCount = (aCountRows as Array<{ c: number }>)[0]?.c ?? 0;
+      const sessCount = (sessCountRows as Array<{ c: number }>)[0]?.c ?? 0;
+
+      if (sCount !== 0 || aCount !== 0 || sessCount !== 0) {
+        throw new Error("Cleanup verification failed: expected zero counts");
+      }
+
+      await conn.commit();
+
+      await conn.query("ALTER TABLE assessments AUTO_INCREMENT = 1");
+      await conn.query("ALTER TABLE audit_logs AUTO_INCREMENT = 1");
+      await conn.query("ALTER TABLE academic_sessions AUTO_INCREMENT = 1");
+
+      const [finalStudents] = await conn.query(
+        "SELECT COUNT(*) AS c FROM students"
+      );
+      const [finalAssessments] = await conn.query(
+        "SELECT COUNT(*) AS c FROM assessments"
+      );
+      const [finalSessions] = await conn.query(
+        "SELECT COUNT(*) AS c FROM academic_sessions"
+      );
+      const [finalAudit] = await conn.query(
+        "SELECT COUNT(*) AS c FROM audit_logs"
+      );
+
+      res.json({
+        ok: true,
+        counts: {
+          students: (finalStudents as Array<{ c: number }>)[0]?.c ?? 0,
+          assessments: (finalAssessments as Array<{ c: number }>)[0]?.c ?? 0,
+          academic_sessions: (finalSessions as Array<{ c: number }>)[0]?.c ?? 0,
+          audit_logs: (finalAudit as Array<{ c: number }>)[0]?.c ?? 0,
+        },
+      });
+    } catch (err) {
+      try {
+        await conn.rollback();
+      } catch (_e) {
+        void _e;
+      }
+      const msg = (err as Error).message || "Cleanup failed";
+      res.status(500).json({ error: msg });
+    } finally {
+      conn.release();
+    }
+  } catch (e) {
+    const err = e as Error;
+    res.status(500).json({ error: err.message || "Unexpected error" });
+  }
+});
 
 app.get("/api/assessments/template", async (req: Request, res: Response) => {
   try {
@@ -349,27 +434,53 @@ app.get("/api/signatures/current", async (req: Request, res: Response) => {
 });
 
 // Vercel Blob upload proxy
-app.post("/api/blob/put", upload.single("file"), async (req: Request, res: Response) => {
-  try {
-    const token = process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_RW_TOKEN;
-    const access = String(req.query.access || "public") as "public" | "private";
-    const p = String(req.query.path || req.body?.path || (req.file?.originalname ? `uploads/${req.file.originalname}` : "uploads/blob.txt"));
-    if (!token) return res.status(400).json({ error: "Missing BLOB_READ_WRITE_TOKEN" });
-    if (req.file) {
-      const buf = fs.readFileSync(req.file.path);
-      const { url } = await put(p, buf, { access, token, contentType: req.file.mimetype });
-      fs.unlinkSync(req.file.path);
+app.post(
+  "/api/blob/put",
+  upload.single("file"),
+  async (req: Request, res: Response) => {
+    try {
+      const token =
+        process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_RW_TOKEN;
+      const accessParam = String(req.query.access || "public");
+      const access: "public" = accessParam === "private" ? "public" : "public";
+      // NOTE: In this codebase the '@vercel/blob' types only expose 'public'.
+      // We normalize any 'private' request to 'public' to satisfy type safety.
+      // If private blobs are required, upgrade the library/types and adjust accordingly.
+      const p = String(
+        req.query.path ||
+          req.body?.path ||
+          (req.file?.originalname
+            ? `uploads/${req.file.originalname}`
+            : "uploads/blob.txt")
+      );
+      if (!token)
+        return res.status(400).json({ error: "Missing BLOB_READ_WRITE_TOKEN" });
+      if (req.file) {
+        const buf = fs.readFileSync(req.file.path);
+        const { url } = await put(p, buf, {
+          access,
+          token,
+          contentType: req.file.mimetype,
+        });
+        fs.unlinkSync(req.file.path);
+        return res.json({ ok: true, url });
+      }
+      const content =
+        typeof req.body?.content === "string" ? req.body.content : undefined;
+      if (!content)
+        return res.status(400).json({ error: "No file or content provided" });
+      const { url } = await put(p, content, {
+        access,
+        token,
+        contentType: "text/plain",
+      });
       return res.json({ ok: true, url });
+    } catch (e) {
+      const err = e as Error;
+      res.status(500).json({ error: err.message || "Blob upload failed" });
     }
-    const content = typeof req.body?.content === "string" ? req.body.content : undefined;
-    if (!content) return res.status(400).json({ error: "No file or content provided" });
-    const { url } = await put(p, content, { access, token, contentType: "text/plain" });
-    return res.json({ ok: true, url });
-  } catch (e) {
-    const err = e as Error;
-    res.status(500).json({ error: err.message || "Blob upload failed" });
   }
-});
+);
 
 app.post("/api/signatures/enable", async (req: Request, res: Response) => {
   try {

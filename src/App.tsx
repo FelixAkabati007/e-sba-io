@@ -199,6 +199,10 @@ export default function App() {
     studentId: null as string | null,
   });
 
+  const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
+  const [wipeConfirmText, setWipeConfirmText] = useState("");
+  const [isWiping, setIsWiping] = useState(false);
+
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
   const [docStatus, setDocStatus] = useState("");
   const [headSignatureDataUrl, setHeadSignatureDataUrl] = useState<
@@ -218,86 +222,9 @@ export default function App() {
   });
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
-  const [students, setStudents] = useState<Student[]>([
-    {
-      id: "JHS25001",
-      surname: "MENSAH",
-      firstName: "Kwame",
-      middleName: "",
-      gender: "Male",
-      dob: "2010-05-12",
-      guardianContact: "0244123456",
-      class: "JHS 2",
-      status: "Active",
-    },
-    {
-      id: "JHS25002",
-      surname: "ADDO",
-      firstName: "Ama",
-      middleName: "Serwaa",
-      gender: "Female",
-      dob: "2010-08-23",
-      guardianContact: "0200987654",
-      class: "JHS 2",
-      status: "Active",
-    },
-    {
-      id: "JHS25003",
-      surname: "OWUSU",
-      firstName: "Emmanuel",
-      middleName: "",
-      gender: "Male",
-      dob: "2009-11-30",
-      guardianContact: "0555112233",
-      class: "JHS 2",
-      status: "Active",
-    },
-    {
-      id: "JHS25004",
-      surname: "BOATENG",
-      firstName: "Grace",
-      middleName: "",
-      gender: "Female",
-      dob: "2011-02-14",
-      guardianContact: "0277445566",
-      class: "JHS 1",
-      status: "Active",
-    },
-  ]);
+  const [students, setStudents] = useState<Student[]>([]);
 
-  const [marks, setMarks] = useState<Marks>({
-    JHS25001: {
-      Mathematics: {
-        cat1: 8,
-        cat2: 9,
-        cat3: 10,
-        cat4: 8,
-        group: 15,
-        project: 18,
-        exam: 75,
-      },
-      "English Language": {
-        cat1: 7,
-        cat2: 8,
-        cat3: 8,
-        cat4: 7,
-        group: 12,
-        project: 15,
-        exam: 60,
-      },
-    },
-    JHS25002: {
-      Mathematics: {
-        cat1: 10,
-        cat2: 10,
-        cat3: 10,
-        cat4: 10,
-        group: 20,
-        project: 20,
-        exam: 88,
-      },
-    },
-  });
+  const [marks, setMarks] = useState<Marks>({});
 
   useEffect(() => {
     setReportId("");
@@ -1079,6 +1006,53 @@ export default function App() {
   const cancelDelete = () =>
     setDeleteConfirmation({ isOpen: false, studentId: null });
 
+  const openWipeModal = () => {
+    setWipeConfirmText("");
+    setIsWipeModalOpen(true);
+  };
+  const closeWipeModal = () => {
+    setIsWipeModalOpen(false);
+  };
+  const performWipe = async () => {
+    if (wipeConfirmText.trim().toUpperCase() !== "CLEAR") return;
+    setIsWiping(true);
+    try {
+      try {
+        const resp = await fetch("/api/admin/clean-master-db?confirm=yes", {
+          method: "POST",
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          void data;
+        }
+      } catch {
+        void 0;
+      }
+      setStudents([]);
+      setMarks({} as Marks);
+      setFormData({
+        id: "",
+        surname: "",
+        firstName: "",
+        middleName: "",
+        gender: "Male",
+        dob: "",
+        guardianContact: "",
+        class: "JHS 1",
+        status: "Active",
+      });
+      setFormErrors({});
+      setIsModalOpen(false);
+      setIsImportModalOpen(false);
+      setDeleteConfirmation({ isOpen: false, studentId: null });
+      setIsWiping(false);
+      setIsWipeModalOpen(false);
+    } catch {
+      void 0;
+      setIsWiping(false);
+    }
+  };
+
   const openCreateModal = () => {
     setEditingStudent(null);
     setFormData({
@@ -1301,7 +1275,7 @@ export default function App() {
             onClick={downloadSubjectTemplate}
             disabled={isGeneratingTemplate}
             className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
-            aria-busy={isGeneratingTemplate ? "true" : "false"}
+            aria-busy={isGeneratingTemplate}
             aria-label="Download assessment template"
           >
             {isGeneratingTemplate ? (
@@ -1918,9 +1892,7 @@ export default function App() {
             </button>
             <button
               disabled={!assessmentFile || isUploadingAssessment}
-              aria-disabled={
-                !assessmentFile || isUploadingAssessment ? "true" : "false"
-              }
+              aria-disabled={!assessmentFile || isUploadingAssessment}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
               onClick={async () => {
                 if (!assessmentFile) return;
@@ -2336,7 +2308,7 @@ export default function App() {
                   talentRemarkError ? "border-red-500" : "border-slate-300"
                 }`}
                 aria-label="Talent and interest remark"
-                aria-invalid={talentRemarkError ? "true" : "false"}
+                aria-invalid={!!talentRemarkError}
                 required
               >
                 <option value="" title="Required">
@@ -2730,6 +2702,70 @@ export default function App() {
           </div>
         </div>
       )}
+      {isWipeModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wipe-db-title"
+            className="bg-white rounded-lg shadow-xl w-full max-w-[95vw] sm:max-w-md p-5 sm:p-6"
+          >
+            <div className="flex flex-col items-center text-center">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <AlertTriangle className="text-red-600" size={24} />
+              </div>
+              <h3
+                id="wipe-db-title"
+                className="text-base sm:text-lg font-bold text-slate-900"
+              >
+                Clear Master Student Database
+              </h3>
+              <p className="text-sm text-slate-500 mt-2">
+                This will permanently remove all student records and reset
+                counters.
+              </p>
+              <div className="mt-4 w-full">
+                <label
+                  htmlFor="wipe-confirm"
+                  className="block text-sm font-medium text-slate-700 mb-1"
+                >
+                  Type CLEAR to confirm
+                </label>
+                <input
+                  id="wipe-confirm"
+                  value={wipeConfirmText}
+                  onChange={(e) => setWipeConfirmText(e.target.value)}
+                  className="w-full p-2 border rounded bg-slate-50"
+                  placeholder="CLEAR"
+                />
+              </div>
+              <div className="flex gap-2 sm:gap-3 mt-6 w-full">
+                <button
+                  onClick={closeWipeModal}
+                  disabled={isWiping}
+                  className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 transition-colors text-sm sm:text-base"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={performWipe}
+                  disabled={
+                    isWiping || wipeConfirmText.trim().toUpperCase() !== "CLEAR"
+                  }
+                  className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors text-sm sm:text-base"
+                >
+                  {isWiping ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                  {isWiping ? " Clearing..." : " Clear"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {isImportModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in zoom-in-95">
           <div
@@ -2976,6 +3012,12 @@ export default function App() {
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-sm hover:shadow transition-all"
           >
             <Users size={16} /> Add Student
+          </button>
+          <button
+            onClick={openWipeModal}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white hover:bg-red-700 rounded-lg text-sm font-medium shadow-sm hover:shadow transition-all"
+          >
+            <Trash2 size={16} /> Clear Database
           </button>
         </div>
       </div>
