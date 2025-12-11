@@ -24,6 +24,7 @@ import {
 } from "./services/signatures";
 import { pool } from "./lib/db";
 import blobdbRouter from "./routes/blobdb";
+import syncRouter from "./routes/sync";
 
 const app = express();
 app.use(cors());
@@ -31,6 +32,7 @@ app.use(express.json({ limit: "5mb" }));
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/blobdb", blobdbRouter);
+app.use("/api/sync", syncRouter);
 
 const uploadDir = path.join(process.cwd(), "uploads", "assessmentSheets");
 fs.mkdirSync(uploadDir, { recursive: true });
