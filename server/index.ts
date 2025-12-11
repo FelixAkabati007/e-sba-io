@@ -25,6 +25,7 @@ import {
 import { pool } from "./lib/db";
 import blobdbRouter from "./routes/blobdb";
 import syncRouter from "./routes/sync";
+import { supabaseAdmin } from "./lib/supabase";
 
 const app = express();
 app.use(cors());
@@ -33,6 +34,37 @@ app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/blobdb", blobdbRouter);
 app.use("/api/sync", syncRouter);
+
+app.get("/api/db/health", async (_req: Request, res: Response) => {
+  try {
+    const conn = await pool.getConnection();
+    const [rows] = await conn.query("SELECT 1 AS ok");
+    conn.release();
+    res.json({ ok: true, rows });
+  } catch (e) {
+    const err = e as Error;
+    res.status(500).json({ ok: false, error: err.message || "DB error" });
+  }
+});
+
+app.get("/api/supabase/health", async (_req: Request, res: Response) => {
+  try {
+    if (!supabaseAdmin)
+      return res
+        .status(500)
+        .json({ ok: false, error: "Supabase not configured" });
+    // Try a lightweight query against a known table if present
+    const { data, error } = await supabaseAdmin
+      .from("subjects")
+      .select("subject_id")
+      .limit(1);
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+    res.json({ ok: true, sample: data ?? [] });
+  } catch (e) {
+    const err = e as Error;
+    res.status(500).json({ ok: false, error: err.message || "Supabase error" });
+  }
+});
 
 const uploadDir = path.join(process.cwd(), "uploads", "assessmentSheets");
 fs.mkdirSync(uploadDir, { recursive: true });

@@ -34,6 +34,8 @@ import "jspdf-autotable";
 import { logger } from "./lib/logger";
 import SignatureUpload from "./components/SignatureUpload";
 
+const MasterDBSyncControls: React.FC = () => null;
+
 type Gender = "Male" | "Female" | "Other";
 
 interface Student {
@@ -1153,95 +1155,95 @@ export default function App() {
             </select>
           </div>
         </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-3">
-          <h3 className="text-lg font-semibold text-slate-700 mb-4">
-            Core Subjects
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {SUBJECTS.slice(0, 4).map((subj) => (
-              <DashboardTile
-                key={subj}
-                title={subj}
-                icon={Calculator}
-                color="bg-blue-600"
-                imageSrc={
-                  subj === "Mathematics"
-                    ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBNVtepKT2YtCg7GODExQYE-kE7UBGS-1lA&s"
-                    : subj === "English Language"
-                    ? "https://edusoftlearning.com/wp-content/uploads/2018/10/Edusoft-the-English-Language-Learning-Experts-1080x540.jpg"
-                    : subj === "Integrated Science"
-                    ? "https://www.nesdis.noaa.gov/s3/2025-09/science.png"
-                    : subj === "Social Studies"
-                    ? "https://lh3.googleusercontent.com/proxy/VXEzlU5A1sqCgvGXJrZdQY0Qcv54HUOqCh8gkQEdSN2STzCqsnkZm1KOYGG9F4kadmva6VY9uKaMjQwfLMCZsVyHsV11tK_qA1eqD1XnjYSMeVNXkQ"
-                    : undefined
-                }
-                onClick={() => {
-                  setActiveSubject(subj);
-                  setCurrentView("subject");
-                }}
-              />
-            ))}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-3">
+            <h3 className="text-lg font-semibold text-slate-700 mb-4">
+              Core Subjects
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {SUBJECTS.slice(0, 4).map((subj) => (
+                <DashboardTile
+                  key={subj}
+                  title={subj}
+                  icon={Calculator}
+                  color="bg-blue-600"
+                  imageSrc={
+                    subj === "Mathematics"
+                      ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBNVtepKT2YtCg7GODExQYE-kE7UBGS-1lA&s"
+                      : subj === "English Language"
+                      ? "https://edusoftlearning.com/wp-content/uploads/2018/10/Edusoft-the-English-Language-Learning-Experts-1080x540.jpg"
+                      : subj === "Integrated Science"
+                      ? "https://www.nesdis.noaa.gov/s3/2025-09/science.png"
+                      : subj === "Social Studies"
+                      ? "https://lh3.googleusercontent.com/proxy/VXEzlU5A1sqCgvGXJrZdQY0Qcv54HUOqCh8gkQEdSN2STzCqsnkZm1KOYGG9F4kadmva6VY9uKaMjQwfLMCZsVyHsV11tK_qA1eqD1XnjYSMeVNXkQ"
+                      : undefined
+                  }
+                  onClick={() => {
+                    setActiveSubject(subj);
+                    setCurrentView("subject");
+                  }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="md:col-span-3">
-          <h3 className="text-lg font-semibold text-slate-700 mb-4">
-            Electives & Others
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {SUBJECTS.slice(4).map((subj) => (
-              <DashboardTile
-                key={subj}
-                title={subj}
-                icon={LayoutGrid}
-                color="bg-emerald-600"
-                imageSrc={
-                  subj === "Computing"
-                    ? "https://findvectorlogo.com/wp-content/uploads/2019/11/computing-vector-logo.png"
-                    : subj === "Career Technology"
-                    ? "https://media.licdn.com/dms/image/v2/D4E12AQE5tslHqALWLw/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1673452653564?e=2147483647&v=beta&t=Mv4FYS9k5cJIfRg1JyH1ZmnLkNhlbxAT7ca3j_HaUoM"
-                    : subj === "Creative Arts"
-                    ? "https://www.purpleoaksacademy.org/_site/data/files/images/auto_upload/page/90/D09D84D10AAC9F784E9BADB7AB3A1F93.jpeg"
-                    : subj === "French"
-                    ? "https://lilata.com/wp-content/uploads/francais-translation-french-french-language.jpg"
-                    : subj === "Ghanaian Language"
-                    ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYLygQ4IcqArqcZdObLbj1Zv0nukkTgEqaWw&s"
-                    : subj === "RME"
-                    ? "https://curriculumresources.edu.gh/wp-content/uploads/2024/11/RELIGIOUS-AND-MORAL-EDUCATION-Curriculum-pdf-1024x724.jpg"
-                    : undefined
-                }
-                onClick={() => {
-                  setActiveSubject(subj);
-                  setCurrentView("subject");
-                }}
-              />
-            ))}
+          <div className="md:col-span-3">
+            <h3 className="text-lg font-semibold text-slate-700 mb-4">
+              Electives & Others
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {SUBJECTS.slice(4).map((subj) => (
+                <DashboardTile
+                  key={subj}
+                  title={subj}
+                  icon={LayoutGrid}
+                  color="bg-emerald-600"
+                  imageSrc={
+                    subj === "Computing"
+                      ? "https://findvectorlogo.com/wp-content/uploads/2019/11/computing-vector-logo.png"
+                      : subj === "Career Technology"
+                      ? "https://media.licdn.com/dms/image/v2/D4E12AQE5tslHqALWLw/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1673452653564?e=2147483647&v=beta&t=Mv4FYS9k5cJIfRg1JyH1ZmnLkNhlbxAT7ca3j_HaUoM"
+                      : subj === "Creative Arts"
+                      ? "https://www.purpleoaksacademy.org/_site/data/files/images/auto_upload/page/90/D09D84D10AAC9F784E9BADB7AB3A1F93.jpeg"
+                      : subj === "French"
+                      ? "https://lilata.com/wp-content/uploads/francais-translation-french-french-language.jpg"
+                      : subj === "Ghanaian Language"
+                      ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYLygQ4IcqArqcZdObLbj1Zv0nukkTgEqaWw&s"
+                      : subj === "RME"
+                      ? "https://curriculumresources.edu.gh/wp-content/uploads/2024/11/RELIGIOUS-AND-MORAL-EDUCATION-Curriculum-pdf-1024x724.jpg"
+                      : undefined
+                  }
+                  onClick={() => {
+                    setActiveSubject(subj);
+                    setCurrentView("subject");
+                  }}
+                />
+              ))}
+            </div>
           </div>
-        </div>
-        <div className="md:col-span-3">
-          <h3 className="text-lg font-semibold text-slate-700 mb-4">
-            Administration
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <DashboardTile
-              title="Master Database"
-              icon={Database}
-              color="bg-slate-600"
-              onClick={() => setCurrentView("masterdb")}
-            />
-            <DashboardTile
-              title="Report Cards"
-              icon={FileText}
-              color="bg-slate-600"
-              onClick={() => setCurrentView("report")}
-            />
-            <DashboardTile
-              title="System Setup"
-              icon={Settings}
-              color="bg-slate-600"
-              onClick={() => setCurrentView("setup")}
-            />
+          <div className="md:col-span-3">
+            <h3 className="text-lg font-semibold text-slate-700 mb-4">
+              Administration
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <DashboardTile
+                title="Master Database"
+                icon={Database}
+                color="bg-slate-600"
+                onClick={() => setCurrentView("masterdb")}
+              />
+              <DashboardTile
+                title="Report Cards"
+                icon={FileText}
+                color="bg-slate-600"
+                onClick={() => setCurrentView("report")}
+              />
+              <DashboardTile
+                title="System Setup"
+                icon={Settings}
+                color="bg-slate-600"
+                onClick={() => setCurrentView("setup")}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1275,7 +1277,6 @@ export default function App() {
             onClick={downloadSubjectTemplate}
             disabled={isGeneratingTemplate}
             className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
-            aria-busy={isGeneratingTemplate ? "true" : "false"}
             aria-label="Download assessment template"
           >
             {isGeneratingTemplate ? (
@@ -1663,19 +1664,11 @@ export default function App() {
       const wb = XLSX.utils.book_new();
       const sheetName = `${activeSubject || "Subject"} Template`;
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-      const blob = new Blob([out], { type: "application/octet-stream" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
       const safe = (v: string) => v.replace(/[^A-Za-z0-9_-]+/g, "_");
-      a.href = url;
-      a.download = `Assessment_Template_${safe(
+      const filename = `Assessment_Template_${safe(
         activeSubject || "Subject"
       )}_${safe(selectedClass)}_${safe(academicYear)}_${safe(term)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      XLSX.writeFile(wb, filename);
       setTemplateStatus("Template downloaded");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -1686,8 +1679,9 @@ export default function App() {
     }
   };
 
-  const renderAssessmentUploadModal = () =>
-    isAssessmentUploadOpen && (
+  const renderAssessmentUploadModal = () => {
+    if (!isAssessmentUploadOpen) return null;
+    return (
       <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
         <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-blue-50">
@@ -1867,18 +1861,17 @@ export default function App() {
               </div>
             )}
             {isUploadingAssessment && (
-              <div
-                className="w-full bg-slate-100 rounded h-2"
-                role="progressbar"
-                aria-label="Upload progress"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={assessmentProgress}
-              >
+              <div className="w-full bg-slate-100 rounded h-2">
                 <div
                   className={`bg-blue-600 h-2 rounded ${progressWidthClass(
                     assessmentProgress
                   )}`}
+                />
+                <progress
+                  value={Math.max(0, Math.min(100, assessmentProgress))}
+                  max={100}
+                  aria-label="Upload progress"
+                  className="sr-only"
                 />
               </div>
             )}
@@ -1892,9 +1885,6 @@ export default function App() {
             </button>
             <button
               disabled={!assessmentFile || isUploadingAssessment}
-              aria-disabled={
-                !assessmentFile || isUploadingAssessment ? "true" : "false"
-              }
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
               onClick={async () => {
                 if (!assessmentFile) return;
@@ -2057,6 +2047,7 @@ export default function App() {
         </div>
       </div>
     );
+  };
 
   const renderReportCard = () => {
     const effectiveReportId = reportId || filteredStudents[0]?.id || "";
@@ -2310,7 +2301,7 @@ export default function App() {
                   talentRemarkError ? "border-red-500" : "border-slate-300"
                 }`}
                 aria-label="Talent and interest remark"
-                aria-invalid={talentRemarkError ? "true" : "false"}
+                aria-invalid={!!talentRemarkError}
                 required
               >
                 <option value="" title="Required">
@@ -3021,6 +3012,7 @@ export default function App() {
           >
             <Trash2 size={16} /> Clear Database
           </button>
+          <MasterDBSyncControls />
         </div>
       </div>
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-slate-200">

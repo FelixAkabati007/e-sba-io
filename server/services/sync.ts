@@ -103,9 +103,7 @@ async function appendChangeIndex(item: ChangeIndexItem): Promise<void> {
   await setCheckpoint(item.ts);
 }
 
-export async function applyChanges(
-  changes: Change[]
-): Promise<{
+export async function applyChanges(changes: Change[]): Promise<{
   results: Array<{
     id: string;
     status: string;
@@ -122,6 +120,11 @@ export async function applyChanges(
   }> = [];
   for (const c of changes) {
     const ts = c.timestamp || Date.now();
+    console.info("[sync_apply]", {
+      id: c.id,
+      clientId: c.clientId,
+      ts,
+    });
     if (c.type === "upsert" && c.doc) {
       const doc = c.doc as Record<string, unknown>;
       const id = String(doc.id || c.id);
