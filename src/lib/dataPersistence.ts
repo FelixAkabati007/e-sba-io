@@ -1,6 +1,7 @@
 import { supabase } from "./supabase";
 import { apiClient } from "./apiClient";
 import { logger } from "./logger";
+import { kvGet, kvSet } from "./storage";
 import type { SubjectSheetQuery, SubjectSheetRow } from "./apiTypes";
 
 const key = (q: SubjectSheetQuery): string =>
@@ -12,7 +13,7 @@ export function saveMarksSession(
 ): void {
   try {
     const payload = { rows, savedAt: Date.now() };
-    sessionStorage.setItem(key(q), JSON.stringify(payload));
+    kvSet("session", key(q), payload);
     logger.info("marks_session_saved", { count: rows.length });
   } catch (e) {
     logger.warn("marks_session_save_failed", e);
@@ -23,12 +24,8 @@ export function loadMarksSession(
   q: SubjectSheetQuery
 ): { rows: SubjectSheetRow[]; savedAt: number } | null {
   try {
-    const raw = sessionStorage.getItem(key(q));
-    if (!raw) return null;
-    const json = JSON.parse(raw) as {
-      rows?: SubjectSheetRow[];
-      savedAt?: number;
-    };
+    const json = kvGet<{ rows?: SubjectSheetRow[]; savedAt?: number }>("session", key(q));
+    if (!json) return null;
     const rows = Array.isArray(json.rows) ? json.rows : [];
     const savedAt = Number(json.savedAt || 0);
     return rows.length ? { rows, savedAt } : null;

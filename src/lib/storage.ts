@@ -36,6 +36,69 @@ const IDB_STORE = "files";
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
+type KVScope = "local" | "session";
+const KV_ALLOWED_PREFIXES = ["STORAGE::", "SYNC::", "ASSESSREPO::", "marks:", "API_AUTH_TOKEN", "BLOB_RW_TOKEN"];
+
+function kvKey(key: string): string {
+  return `${LS_NS}${key}`;
+}
+
+export function kvSet(scope: KVScope, key: string, value: unknown): void {
+  try {
+    const payload = JSON.stringify(value);
+    if (scope === "session") {
+      sessionStorage.setItem(kvKey(key), payload);
+    } else {
+      localStorage.setItem(kvKey(key), payload);
+    }
+    logger.info("kv_set_ok", { scope, key });
+  } catch (e) {
+    logger.warn("kv_set_failed", { scope, key, error: e });
+  }
+}
+
+export function kvGet<T>(scope: KVScope, key: string): T | null {
+  try {
+    const raw = scope === "session" ? sessionStorage.getItem(kvKey(key)) : localStorage.getItem(kvKey(key));
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    logger.warn("kv_get_failed", { scope, key, error: e });
+    return null;
+  }
+}
+
+export function kvRemove(scope: KVScope, key: string): void {
+  try {
+    if (scope === "session") {
+      sessionStorage.removeItem(kvKey(key));
+    } else {
+      localStorage.removeItem(kvKey(key));
+    }
+    logger.info("kv_remove_ok", { scope, key });
+  } catch (e) {
+    logger.warn("kv_remove_failed", { scope, key, error: e });
+  }
+}
+
+export function kvEnsureStandard(): { ok: boolean; violations: string[] } {
+  const violations: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i) || "";
+      if (!KV_ALLOWED_PREFIXES.some((p) => k.startsWith(p))) violations.push(k);
+    }
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i) || "";
+      if (!KV_ALLOWED_PREFIXES.some((p) => k.startsWith(p))) violations.push(k);
+    }
+  } catch (e) {
+    logger.warn("kv_inspect_failed", e);
+  }
+  const ok = violations.length === 0;
+  if (!ok) logger.warn("kv_standard_violations", { count: violations.length, keys: violations.slice(0, 50) });
+  return { ok, violations };
+}
 function uid(): string {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }

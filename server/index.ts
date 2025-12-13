@@ -26,6 +26,7 @@ import {
 import { pool } from "./lib/db";
 import blobdbRouter from "./routes/blobdb";
 import syncRouter from "./routes/sync";
+import assessRepoRouter from "./routes/assessrepo";
 import { supabaseAdmin } from "./lib/supabase";
 
 const app = express();
@@ -35,6 +36,7 @@ app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/blobdb", blobdbRouter);
 app.use("/api/sync", syncRouter);
+app.use("/api/assessrepo", assessRepoRouter);
 
 app.get("/api/db/health", async (_req: Request, res: Response) => {
   try {

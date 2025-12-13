@@ -17,6 +17,7 @@ Public API: ClientSync helper for robust client-server synchronization
 */
 
 import { logger } from "./logger";
+import { kvGet, kvSet } from "./storage";
 
 export type StudentDoc = {
   id: string;
@@ -92,21 +93,10 @@ const LS_CP = "SYNC::CHECKPOINT";
 const LS_HISTORY = "SYNC::HISTORY";
 
 function safeLocalStorageGet<T>(key: string): T | null {
-  try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
+  return kvGet<T>("local", key.replace(/^SYNC::/, ""));
 }
-
 function safeLocalStorageSet<T>(key: string, val: T): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(val));
-  } catch {
-    void 0;
-  }
+  kvSet("local", key.replace(/^SYNC::/, ""), val);
 }
 
 export class ClientSync {

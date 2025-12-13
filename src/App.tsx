@@ -33,6 +33,7 @@ import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import { logger } from "./lib/logger";
 import { apiClient } from "./lib/apiClient";
+import type { SubjectSheetRow } from "./lib/apiTypes";
 import SignatureUpload from "./components/SignatureUpload";
 import {
   saveMarksSession,
@@ -211,6 +212,23 @@ export default function App() {
     usage?: number;
     lsBytes: number;
   }>({ lsBytes: 0 });
+  const [isExcelViewerOpen, setIsExcelViewerOpen] = useState(false);
+  const [excelViewerLoading, setExcelViewerLoading] = useState(false);
+  const [excelViewerError, setExcelViewerError] = useState<string | null>(null);
+  const [excelViewerSheets, setExcelViewerSheets] = useState<
+    Array<{
+      name: string;
+      headers: string[];
+      rows: Array<Record<string, unknown>>;
+    }>
+  >([]);
+  const [excelViewerMeta, setExcelViewerMeta] = useState<{
+    name?: string;
+    size?: number;
+    type?: string;
+    macro?: boolean;
+  } | null>(null);
+  const [excelViewerActive, setExcelViewerActive] = useState(0);
   useEffect(() => {
     let cancelled = false;
     const subject = activeSubject;
@@ -346,7 +364,7 @@ export default function App() {
     if (!subject || !cls || !year || !t) return;
     const unsubscribe = subscribeAssessments(
       { subject, class: cls, academicYear: year, term: t },
-      (rows) => {
+      (rows: SubjectSheetRow[]) => {
         setMarks((prev) => {
           const next: Marks = { ...prev };
           for (const r of rows) {
@@ -580,7 +598,7 @@ export default function App() {
               v: cell.v,
               w,
               f: cell.f,
-              z: cell.z,
+              z: typeof cell.z === "string" ? cell.z : undefined,
             });
           }
         }
@@ -694,6 +712,74 @@ export default function App() {
     }
   };
 
+  const openStoredExcel = async (id: string) => {
+    setExcelViewerLoading(true);
+    setExcelViewerError(null);
+    setIsExcelViewerOpen(true);
+    setExcelViewerSheets([]);
+    setExcelViewerMeta(null);
+    try {
+      const v = await getData(id);
+      if (!v || typeof v.data === "string")
+        throw new Error("Invalid file payload");
+      const bytes = new Uint8Array(v.data as ArrayBuffer);
+      if (!(bytes[0] === 0x50 && bytes[1] === 0x4b))
+        throw new Error("File integrity check failed");
+      await new Promise((r) => setTimeout(r, 0));
+      const macroMode = /\.xlsm$/i.test(v.meta.name || "");
+      const t0 = performance.now();
+      const wb = XLSX.read(v.data as ArrayBuffer, {
+        type: "array",
+        cellDates: true,
+        cellNF: true,
+        cellText: true,
+        raw: false,
+        bookVBA: true,
+        bookFiles: true,
+        bookProps: true,
+      });
+      const hasVBA = Boolean(
+        (wb as unknown as Record<string, unknown>)["vbaraw"]
+      );
+      const sheets: Array<{
+        name: string;
+        headers: string[];
+        rows: Array<Record<string, unknown>>;
+      }> = [];
+      for (const sheetName of wb.SheetNames) {
+        const ws = wb.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(ws, {
+          raw: false,
+          defval: "",
+        }) as Array<Record<string, unknown>>;
+        const headers: string[] = [];
+        if (data.length) headers.push(...Object.keys(data[0]));
+        sheets.push({ name: sheetName, headers, rows: data });
+      }
+      setExcelViewerSheets(sheets);
+      setExcelViewerMeta({
+        name: v.meta.name,
+        size: v.meta.size,
+        type: v.meta.type,
+        macro: macroMode || hasVBA,
+      });
+      setExcelViewerActive(0);
+      const t1 = performance.now();
+      logger.info("excel_open_ok", {
+        id,
+        sheets: sheets.length,
+        size: v.meta.size,
+        ms: Math.round(t1 - t0),
+      });
+    } catch (e) {
+      const msg = (e as Error)?.message || "Failed to open Excel file";
+      setExcelViewerError(msg);
+      logger.error("excel_open_failed", msg);
+    } finally {
+      setExcelViewerLoading(false);
+    }
+  };
+
   const processImport = () => {
     if (importedPreview.length === 0) return;
     let addedCount = 0;
@@ -797,6 +883,19 @@ export default function App() {
         );
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "MasterDB");
+        const wbx = wb as unknown as {
+          Workbook?: {
+            Sheets?: Array<{ Hidden?: number }>;
+            Views?: Array<Record<string, unknown>>;
+          };
+          SheetNames?: string[];
+        };
+        if (!wbx.Workbook) wbx.Workbook = { Sheets: [], Views: [] };
+        const names = Array.isArray(wbx.SheetNames)
+          ? wbx.SheetNames
+          : ["MasterDB"];
+        wbx.Workbook.Sheets = names.map(() => ({ Hidden: 0 }));
+        wbx.Workbook.Views = [{ activeTab: 0 }];
         XLSX.writeFile(
           wb,
           `MasterDB_${selectedClass}_${
@@ -2678,7 +2777,7 @@ export default function App() {
                   talentRemarkError ? "border-red-500" : "border-slate-300"
                 }`}
                 aria-label="Talent and interest remark"
-                aria-invalid={!!talentRemarkError}
+                aria-invalid={talentRemarkError ? "true" : "false"}
                 required
               >
                 <option value="" title="Required">
@@ -3022,6 +3121,110 @@ export default function App() {
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {isExcelViewerOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-[95vw] max-w-6xl max-h-[90vh] overflow-hidden border border-slate-200">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet size={18} className="text-emerald-600" />
+                <div className="text-sm text-slate-700">
+                  <div className="font-semibold">
+                    {excelViewerMeta?.name || "Excel File"}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {excelViewerMeta?.type} ·{" "}
+                    {excelViewerMeta?.size
+                      ? `${(excelViewerMeta.size / (1024 * 1024)).toFixed(
+                          2
+                        )} MB`
+                      : ""}{" "}
+                    {excelViewerMeta?.macro ? "· Macros detected" : ""}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsExcelViewerOpen(false);
+                  setExcelViewerSheets([]);
+                  setExcelViewerError(null);
+                }}
+                className="p-2 rounded hover:bg-slate-100"
+                aria-label="Close Excel viewer"
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            {excelViewerLoading ? (
+              <div className="flex items-center justify-center h-64">
+                <Loader2 size={32} className="animate-spin text-emerald-600" />
+                <span className="ml-3 text-slate-600 text-sm">
+                  Loading workbook…
+                </span>
+              </div>
+            ) : excelViewerError ? (
+              <div className="p-6 text-red-700 bg-red-50 text-sm">
+                {excelViewerError}
+              </div>
+            ) : (
+              <div className="flex flex-col h-[70vh]">
+                <div className="flex gap-2 p-2 border-b bg-slate-50 overflow-x-auto">
+                  {excelViewerSheets.map((s, i) => (
+                    <button
+                      key={s.name}
+                      onClick={() => setExcelViewerActive(i)}
+                      className={`px-3 py-1 rounded ${
+                        excelViewerActive === i
+                          ? "bg-white border border-slate-200"
+                          : "bg-slate-100"
+                      }`}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 overflow-auto p-2">
+                  {excelViewerSheets[excelViewerActive] && (
+                    <table className="min-w-full text-xs">
+                      <thead>
+                        <tr>
+                          {excelViewerSheets[excelViewerActive].headers.map(
+                            (h) => (
+                              <th
+                                key={h}
+                                className="px-2 py-1 bg-slate-100 text-slate-600 border-b"
+                              >
+                                {h}
+                              </th>
+                            )
+                          )}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {excelViewerSheets[excelViewerActive].rows.map(
+                          (row, ri) => (
+                            <tr key={ri} className="border-b">
+                              {excelViewerSheets[excelViewerActive].headers.map(
+                                (h) => (
+                                  <td key={h} className="px-2 py-1">
+                                    {String(
+                                      (row as Record<string, unknown>)[h] ?? ""
+                                    )}
+                                  </td>
+                                )
+                              )}
+                            </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -3451,10 +3654,23 @@ export default function App() {
                       (1024 * 1024)
                     ).toFixed(2)} MB`}</td>
                     <td className="py-2 px-2">
-                      {new Date(m.timestamp).toLocaleString()}
-                    </td>
-                    <td className="py-2 px-2">
                       <div className="flex gap-2">
+                        {(() => {
+                          const t = m.type || "";
+                          const n = m.name || "";
+                          const isExcelMime = /spreadsheetml|ms-excel/i.test(t);
+                          const isExcelName =
+                            /\.(xlsx|xlsm|xls)$/i.test(n) &&
+                            m.kind === "upload";
+                          return isExcelMime || isExcelName;
+                        })() && (
+                          <button
+                            onClick={() => openStoredExcel(m.id)}
+                            className="px-3 py-1 bg-white border border-slate-200 text-slate-700 rounded"
+                          >
+                            Open
+                          </button>
+                        )}
                         <button
                           onClick={() => downloadStoredItem(m.id)}
                           className="px-3 py-1 bg-white border border-slate-200 text-slate-700 rounded"

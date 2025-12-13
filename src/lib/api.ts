@@ -1,12 +1,12 @@
 import { logger } from "./logger";
+import { kvGet } from "./storage";
 
 const tokenKey = "BLOB_RW_TOKEN";
 
 function getToken(): string | undefined {
   try {
-    return typeof localStorage !== "undefined"
-      ? localStorage.getItem(tokenKey) || undefined
-      : undefined;
+    const v = kvGet<string>("local", tokenKey);
+    return v || undefined;
   } catch {
     return undefined;
   }
