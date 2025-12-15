@@ -28,10 +28,7 @@ clientSync.start();
 (async () => {
   if (!supabase) return;
   try {
-    const { data, error } = await supabase
-      .from("instruments")
-      .select()
-      .limit(1);
+    const { data, error } = await supabase.from("subjects").select().limit(1);
     if (error) {
       console.warn("[Supabase]", { error });
     } else {

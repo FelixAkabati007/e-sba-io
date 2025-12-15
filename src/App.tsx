@@ -128,6 +128,14 @@ const LS_STUDENTS_KEY = "MasterDBStudents";
 const LS_MARKS_KEY = "MasterDBMarks";
 const LS_STUDENTS_REF = "MasterDBStudentsRef";
 const LS_MARKS_REF = "MasterDBMarksRef";
+const verKey = (cls: string, subj: string, ay: string, tm: string): string =>
+  `ASSESSREPO::VER:${cls}:${subj}:${ay}:${tm}`;
+const lastProcessedKey = (
+  cls: string,
+  subj: string,
+  ay: string,
+  tm: string
+): string => `ASSESSREPO::LAST_PROCESSED:${cls}:${subj}:${ay}:${tm}`;
 
 type TileProps = {
   title: string;
@@ -2405,6 +2413,212 @@ export default function App() {
                 if (!assessmentFile) return;
                 setIsUploadingAssessment(true);
                 setAssessmentProgress(10);
+                const runLocal = async () => {
+                  const readBuf = () =>
+                    new Promise<ArrayBuffer>((resolve, reject) => {
+                      const r = new FileReader();
+                      r.onload = () => resolve(r.result as ArrayBuffer);
+                      r.onerror = () =>
+                        reject(new Error("Failed to read file"));
+                      r.readAsArrayBuffer(assessmentFile);
+                    });
+                  const buf = await readBuf();
+                  const data = new Uint8Array(buf);
+                  const wb = XLSX.read(data, { type: "array" });
+                  const ws = wb.Sheets[wb.SheetNames[0]];
+                  const arr = XLSX.utils.sheet_to_json(ws) as Record<
+                    string,
+                    unknown
+                  >[];
+                  const req = [
+                    "student_id",
+                    "cat1",
+                    "cat2",
+                    "cat3",
+                    "cat4",
+                    "group",
+                    "project",
+                    "exam",
+                  ];
+                  const keys = arr[0]
+                    ? Object.keys(arr[0]).map((k) => k.toLowerCase().trim())
+                    : [];
+                  const missing = req.filter((k) => !keys.includes(k));
+                  if (missing.length) {
+                    setAssessmentErrors([
+                      `Missing columns: ${missing.join(", ")}`,
+                    ]);
+                    throw new Error("Invalid template");
+                  }
+                  const clamp = (f: string, n: number) => {
+                    const v = Number.isFinite(n) ? n : 0;
+                    if (f === "exam") return Math.max(0, Math.min(100, v));
+                    if (f === "group" || f === "project")
+                      return Math.max(0, Math.min(20, v));
+                    if (["cat1", "cat2", "cat3", "cat4"].includes(f))
+                      return Math.max(0, Math.min(10, v));
+                    return Math.max(0, v);
+                  };
+                  const normalizeKey = (k: string): string =>
+                    k
+                      .toLowerCase()
+                      .trim()
+                      .replace(/[\s-]+/g, "_")
+                      .replace(/__+/g, "_")
+                      .replace(/^_+|_+$/g, "");
+                  const alias: Record<string, string> = {
+                    studentid: "student_id",
+                    student_id: "student_id",
+                    id: "student_id",
+                    cat1_score: "cat1",
+                    cat2_score: "cat2",
+                    cat3_score: "cat3",
+                    cat4_score: "cat4",
+                    group_work: "group",
+                    group_work_score: "group",
+                    project_work: "project",
+                    project_work_score: "project",
+                    exam_score: "exam",
+                  };
+                  const mapKey = (raw: string): string => {
+                    const n = normalizeKey(raw);
+                    return alias[n] || n;
+                  };
+                  const unmatched: string[] = [];
+                  setMarks((prev) => {
+                    const nm: Marks = { ...prev };
+                    for (const r of arr) {
+                      const lower: Record<string, unknown> = {};
+                      Object.keys(r).forEach(
+                        (k) =>
+                          (lower[mapKey(k)] = (r as Record<string, unknown>)[k])
+                      );
+                      const sid = String(lower["student_id"] || "").trim();
+                      if (!sid) continue;
+                      if (!students.some((s) => s.id === sid))
+                        unmatched.push(sid);
+                      const fields = [
+                        "cat1",
+                        "cat2",
+                        "cat3",
+                        "cat4",
+                        "group",
+                        "project",
+                        "exam",
+                      ] as const;
+                      const val: Record<string, number> = {};
+                      fields.forEach((f) => {
+                        const raw = parseFloat(String(lower[f] ?? ""));
+                        const n = clamp(f, Number.isFinite(raw) ? raw : 0);
+                        val[f] = n;
+                      });
+                      nm[sid] = nm[sid] || {};
+                      nm[sid][activeSubject] = {
+                        cat1: val["cat1"],
+                        cat2: val["cat2"],
+                        cat3: val["cat3"],
+                        cat4: val["cat4"],
+                        group: val["group"],
+                        project: val["project"],
+                        exam: val["exam"],
+                      };
+                    }
+                    return nm;
+                  });
+                  const uploadedAt = Date.now();
+                  const vk = verKey(
+                    selectedClass,
+                    activeSubject,
+                    academicYear,
+                    term
+                  );
+                  const currentVer = kvGet<number>("local", vk) || 0;
+                  const nextVer = currentVer + 1;
+                  const processed = arr
+                    .map((r) => {
+                      const lower: Record<string, unknown> = {};
+                      Object.keys(r).forEach(
+                        (k) =>
+                          (lower[mapKey(k)] = (r as Record<string, unknown>)[k])
+                      );
+                      const sid = String(lower["student_id"] || "").trim();
+                      if (!sid) return null;
+                      return {
+                        student_id: sid,
+                        metrics: {
+                          cat1: Number(lower["cat1"] ?? 0),
+                          cat2: Number(lower["cat2"] ?? 0),
+                          cat3: Number(lower["cat3"] ?? 0),
+                          cat4: Number(lower["cat4"] ?? 0),
+                          group: Number(lower["group"] ?? 0),
+                          project: Number(lower["project"] ?? 0),
+                          exam: Number(lower["exam"] ?? 0),
+                        },
+                        uploadedAt,
+                        version: nextVer,
+                      };
+                    })
+                    .filter(Boolean) as Array<{
+                    student_id: string;
+                    metrics: Record<string, number>;
+                    uploadedAt: number;
+                    version: number;
+                  }>;
+                  const payload = JSON.stringify({
+                    subject: activeSubject,
+                    class: selectedClass,
+                    academicYear,
+                    term,
+                    uploadedAt,
+                    version: nextVer,
+                    count: processed.length,
+                    unmatched,
+                    rows: processed,
+                  });
+                  try {
+                    const { id } = await saveDownloadedContent(
+                      undefined,
+                      payload,
+                      "application/json",
+                      [
+                        "assessments",
+                        "processed",
+                        activeSubject || "",
+                        selectedClass || "",
+                      ],
+                      undefined,
+                      true,
+                      `Processed_${(activeSubject || "")
+                        .replace(/[^A-Za-z0-9_-]+/g, "_")
+                        .slice(
+                          0,
+                          40
+                        )}_${selectedClass}_${academicYear}_${term}_v${nextVer}.json`
+                    );
+                    kvSet("local", vk, nextVer);
+                    kvSet(
+                      "local",
+                      lastProcessedKey(
+                        selectedClass,
+                        activeSubject,
+                        academicYear,
+                        term
+                      ),
+                      id
+                    );
+                  } catch {
+                    logger.warn("processed_save_failed");
+                  }
+                  setImportLogs((prev) => [
+                    ...prev,
+                    {
+                      status: "success",
+                      message: `Mapped ${processed.length} records. Unmatched: ${unmatched.length}.`,
+                    },
+                  ]);
+                  setAssessmentProgress(100);
+                  setIsAssessmentUploadOpen(false);
+                };
                 try {
                   const resp = await apiClient.uploadAssessments(
                     assessmentFile,
@@ -2417,123 +2631,8 @@ export default function App() {
                   setAssessmentProgress(70);
                   const json: unknown = resp as unknown;
                   if (!json) {
-                    try {
-                      const readBuf = () =>
-                        new Promise<ArrayBuffer>((resolve, reject) => {
-                          const r = new FileReader();
-                          r.onload = () => resolve(r.result as ArrayBuffer);
-                          r.onerror = () =>
-                            reject(new Error("Failed to read file"));
-                          r.readAsArrayBuffer(assessmentFile);
-                        });
-                      const buf = await readBuf();
-                      const data = new Uint8Array(buf);
-                      const wb = XLSX.read(data, { type: "array" });
-                      const ws = wb.Sheets[wb.SheetNames[0]];
-                      const arr = XLSX.utils.sheet_to_json(ws) as Record<
-                        string,
-                        unknown
-                      >[];
-                      const req = [
-                        "student_id",
-                        "cat1",
-                        "cat2",
-                        "cat3",
-                        "cat4",
-                        "group",
-                        "project",
-                        "exam",
-                      ];
-                      const keys = arr[0]
-                        ? Object.keys(arr[0]).map((k) => k.toLowerCase().trim())
-                        : [];
-                      const missing = req.filter((k) => !keys.includes(k));
-                      if (missing.length) {
-                        setAssessmentErrors([
-                          `Missing columns: ${missing.join(", ")}`,
-                        ]);
-                        throw new Error("Invalid template");
-                      }
-                      const clamp = (f: string, n: number) => {
-                        const v = Number.isFinite(n) ? n : 0;
-                        if (f === "exam") return Math.max(0, Math.min(100, v));
-                        if (f === "group" || f === "project")
-                          return Math.max(0, Math.min(20, v));
-                        if (["cat1", "cat2", "cat3", "cat4"].includes(f))
-                          return Math.max(0, Math.min(10, v));
-                        return Math.max(0, v);
-                      };
-                      const normalizeKey = (k: string): string =>
-                        k
-                          .toLowerCase()
-                          .trim()
-                          .replace(/[\s-]+/g, "_")
-                          .replace(/__+/g, "_")
-                          .replace(/^_+|_+$/g, "");
-                      const alias: Record<string, string> = {
-                        studentid: "student_id",
-                        student_id: "student_id",
-                        id: "student_id",
-                        cat1_score: "cat1",
-                        cat2_score: "cat2",
-                        cat3_score: "cat3",
-                        cat4_score: "cat4",
-                        group_work: "group",
-                        group_work_score: "group",
-                        project_work: "project",
-                        project_work_score: "project",
-                        exam_score: "exam",
-                      };
-                      const mapKey = (raw: string): string => {
-                        const n = normalizeKey(raw);
-                        return alias[n] || n;
-                      };
-                      setMarks((prev) => {
-                        const nm: Marks = { ...prev };
-                        for (const r of arr) {
-                          const lower: Record<string, unknown> = {};
-                          Object.keys(r).forEach(
-                            (k) =>
-                              (lower[mapKey(k)] = (
-                                r as Record<string, unknown>
-                              )[k])
-                          );
-                          const sid = String(lower["student_id"] || "").trim();
-                          if (!sid) continue;
-                          const fields = [
-                            "cat1",
-                            "cat2",
-                            "cat3",
-                            "cat4",
-                            "group",
-                            "project",
-                            "exam",
-                          ] as const;
-                          const val: Record<string, number> = {};
-                          fields.forEach((f) => {
-                            const raw = parseFloat(String(lower[f] ?? ""));
-                            const n = clamp(f, Number.isFinite(raw) ? raw : 0);
-                            val[f] = n;
-                          });
-                          nm[sid] = nm[sid] || {};
-                          nm[sid][activeSubject] = {
-                            cat1: val["cat1"],
-                            cat2: val["cat2"],
-                            cat3: val["cat3"],
-                            cat4: val["cat4"],
-                            group: val["group"],
-                            project: val["project"],
-                            exam: val["exam"],
-                          };
-                        }
-                        return nm;
-                      });
-                      setAssessmentProgress(100);
-                      setIsAssessmentUploadOpen(false);
-                      return;
-                    } catch {
-                      throw new Error("Upload failed");
-                    }
+                    await runLocal();
+                    return;
                   }
                   if (
                     json &&
@@ -2614,8 +2713,14 @@ export default function App() {
                     }
                   }
                 } catch (err: unknown) {
-                  const msg = err instanceof Error ? err.message : String(err);
-                  setAssessmentErrors([msg || "Upload failed"]);
+                  try {
+                    await runLocal();
+                    return;
+                  } catch {
+                    const msg =
+                      err instanceof Error ? err.message : String(err);
+                    setAssessmentErrors([msg || "Upload failed"]);
+                  }
                 } finally {
                   setIsUploadingAssessment(false);
                   setAssessmentProgress(0);

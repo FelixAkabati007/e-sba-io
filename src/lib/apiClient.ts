@@ -20,7 +20,13 @@ function baseUrl(): string {
 function authHeader(): Record<string, string> {
   try {
     const token = kvGet<string>("local", "API_AUTH_TOKEN") || undefined;
-    return token ? { Authorization: `Bearer ${token}` } : {};
+    const up = kvGet<string>("local", "UPLOAD_TOKEN") || undefined;
+    const down = kvGet<string>("local", "DOWNLOAD_TOKEN") || undefined;
+    const hdrs: Record<string, string> = {};
+    if (token) hdrs.Authorization = `Bearer ${token}`;
+    if (up) hdrs["x-upload-token"] = up;
+    if (down) hdrs["x-download-token"] = down;
+    return hdrs;
   } catch {
     return {};
   }
