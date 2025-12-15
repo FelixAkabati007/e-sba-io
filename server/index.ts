@@ -42,6 +42,9 @@ app.use("/api/blobdb", blobdbRouter);
 app.use("/api/sync", syncRouter);
 app.use("/api/assessrepo", assessRepoRouter);
 
+// Serve built client app (dist) for production deployments
+app.use(express.static(path.join(process.cwd(), "dist")));
+
 // Global error handler to ensure JSON errors (including Multer/file upload issues)
 app.use(
   (
@@ -728,6 +731,14 @@ app.get(
 );
 
 const port = Number(process.env.PORT || 3001);
+// Fallback to index.html for client-side routing
+app.get("*", (_req: Request, res: Response) => {
+  try {
+    res.sendFile(path.join(process.cwd(), "dist", "index.html"));
+  } catch {
+    res.status(404).send("Not Found");
+  }
+});
 app.listen(port, () => {
   console.log(`[server] listening on http://localhost:${port}`);
   setInterval(
