@@ -2236,11 +2236,11 @@ export default function App() {
               className="w-full p-6 border-2 border-dashed rounded mb-2 text-center text-slate-500"
               aria-label="Drag and drop assessment sheet here"
             >
-              Drag & Drop .xlsx here or use file picker
+              Drag & Drop .xlsx/.xls here or use file picker
             </div>
             <input
               type="file"
-              accept=".xlsx,.xls,.csv,.pdf,.docx"
+              accept=".xlsx,.xls"
               onChange={(e) => {
                 const f = e.target.files?.[0] || null;
                 setAssessmentFile(f);
@@ -2252,17 +2252,16 @@ export default function App() {
                   return;
                 }
                 const ext = f.name.split(".").pop()?.toLowerCase();
-                if (
-                  !ext ||
-                  !["xlsx", "xls", "csv", "pdf", "docx"].includes(ext)
-                ) {
-                  setAssessmentErrors(["Invalid file type."]);
+                if (!ext || !["xlsx", "xls"].includes(ext)) {
+                  setAssessmentErrors([
+                    "Invalid file type. Please upload .xlsx or .xls.",
+                  ]);
                   return;
                 }
                 const reader = new FileReader();
                 reader.onload = () => {
                   try {
-                    if (["xlsx", "xls", "csv"].includes(ext)) {
+                    if (["xlsx", "xls"].includes(ext)) {
                       const data = new Uint8Array(reader.result as ArrayBuffer);
                       const wb = XLSX.read(data, { type: "array" });
                       const ws = wb.Sheets[wb.SheetNames[0]];
@@ -2270,10 +2269,33 @@ export default function App() {
                         string,
                         string | number | null
                       >[];
+                      const normalizeKey = (k: string): string =>
+                        k
+                          .toLowerCase()
+                          .trim()
+                          .replace(/[\s-]+/g, "_")
+                          .replace(/__+/g, "_")
+                          .replace(/^_+|_+$/g, "");
+                      const alias: Record<string, string> = {
+                        studentid: "student_id",
+                        student_id: "student_id",
+                        id: "student_id",
+                        cat1_score: "cat1",
+                        cat2_score: "cat2",
+                        cat3_score: "cat3",
+                        cat4_score: "cat4",
+                        group_work: "group",
+                        group_work_score: "group",
+                        project_work: "project",
+                        project_work_score: "project",
+                        exam_score: "exam",
+                      };
+                      const mapKey = (raw: string): string => {
+                        const n = normalizeKey(raw);
+                        return alias[n] || n;
+                      };
                       const keys = json[0]
-                        ? Object.keys(json[0]).map((k) =>
-                            k.toLowerCase().trim()
-                          )
+                        ? Object.keys(json[0]).map((k) => mapKey(k))
                         : [];
                       const required = [
                         "student_id",
@@ -2297,7 +2319,7 @@ export default function App() {
                     } else {
                       setAssessmentPreview([]);
                       setAssessmentErrors([
-                        "This file will be stored as an attachment. To apply marks, upload an XLSX or CSV template.",
+                        "This file will be stored as an attachment. To apply marks, upload an XLSX template.",
                       ]);
                     }
                   } catch (err: unknown) {
@@ -2441,18 +2463,42 @@ export default function App() {
                           return Math.max(0, Math.min(10, v));
                         return Math.max(0, v);
                       };
+                      const normalizeKey = (k: string): string =>
+                        k
+                          .toLowerCase()
+                          .trim()
+                          .replace(/[\s-]+/g, "_")
+                          .replace(/__+/g, "_")
+                          .replace(/^_+|_+$/g, "");
+                      const alias: Record<string, string> = {
+                        studentid: "student_id",
+                        student_id: "student_id",
+                        id: "student_id",
+                        cat1_score: "cat1",
+                        cat2_score: "cat2",
+                        cat3_score: "cat3",
+                        cat4_score: "cat4",
+                        group_work: "group",
+                        group_work_score: "group",
+                        project_work: "project",
+                        project_work_score: "project",
+                        exam_score: "exam",
+                      };
+                      const mapKey = (raw: string): string => {
+                        const n = normalizeKey(raw);
+                        return alias[n] || n;
+                      };
                       setMarks((prev) => {
                         const nm: Marks = { ...prev };
                         for (const r of arr) {
                           const lower: Record<string, unknown> = {};
-                          Object.keys(r).forEach((k) => {
-                            lower[k.toLowerCase().trim()] = (
-                              r as Record<string, unknown>
-                            )[k];
-                          });
-                          const sid = String(
-                            lower["student_id"] || lower["id"] || ""
-                          ).trim();
+                          Object.keys(r).forEach(
+                            (k) =>
+                              (lower[mapKey(k)] = (
+                                r as Record<string, unknown>
+                              )[k])
+                          );
+                          const sid = String(lower["student_id"] || "").trim();
                           if (!sid) continue;
                           const fields = [
                             "cat1",
@@ -2648,7 +2694,7 @@ export default function App() {
                 talentRemarkError ? "border-red-500" : "border-slate-300"
               }`}
               aria-label="Talent and interest remark"
-              aria-invalid={!!talentRemarkError}
+              aria-invalid={talentRemarkError ? "true" : "false"}
               required
             >
               <option value="" title="Required">
@@ -2666,7 +2712,7 @@ export default function App() {
             </select>
             {talentRemark === "Other" && (
               <input
-                id="talent-remark-other"
+                id="talent-remark-other-empty"
                 value={talentRemarkOther}
                 onChange={(e) => {
                   setTalentRemarkOther(e.target.value);
@@ -2718,7 +2764,7 @@ export default function App() {
             </select>
             {teacherRemark === "Other" && (
               <input
-                id="teacher-remark-other"
+                id="teacher-remark-other-empty"
                 value={teacherRemarkOther}
                 onChange={(e) => setTeacherRemarkOther(e.target.value)}
                 className="w-full border border-slate-300 rounded p-2"
@@ -2961,7 +3007,7 @@ export default function App() {
                   talentRemarkError ? "border-red-500" : "border-slate-300"
                 }`}
                 aria-label="Talent and interest remark"
-                aria-invalid={!!talentRemarkError}
+                aria-invalid={talentRemarkError ? "true" : "false"}
                 required
               >
                 <option value="" title="Required">
@@ -2979,7 +3025,7 @@ export default function App() {
               </select>
               {talentRemark === "Other" && (
                 <input
-                  id="talent-remark-other"
+                  id="talent-remark-other-report"
                   value={talentRemarkOther}
                   onChange={(e) => {
                     setTalentRemarkOther(e.target.value);
@@ -3030,7 +3076,7 @@ export default function App() {
             </select>
             {teacherRemark === "Other" && (
               <input
-                id="teacher-remark-other"
+                id="teacher-remark-other-report"
                 value={teacherRemarkOther}
                 onChange={(e) => setTeacherRemarkOther(e.target.value)}
                 className="w-full border border-slate-300 rounded p-2"

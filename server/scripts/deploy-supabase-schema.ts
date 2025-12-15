@@ -3,7 +3,20 @@ import path from "path";
 import pg from "pg";
 const { Pool } = pg;
 import dotenv from "dotenv";
-dotenv.config();
+import { fileURLToPath } from "url";
+(() => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const roots = [process.cwd(), path.resolve(here, "..", "..")];
+  const files = [".env", ".env.development", ".env.local"];
+  for (const r of roots) {
+    for (const f of files) {
+      const p = path.join(r, f);
+      if (fs.existsSync(p)) {
+        dotenv.config({ path: p, override: true });
+      }
+    }
+  }
+})();
 
 const connStr = (process.env.SUPABASE_PG_CONN || process.env.POSTGRES_URL) as
   | string

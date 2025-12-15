@@ -17,39 +17,96 @@ const clamp = (f: string, n: number) => {
   const v = Number.isFinite(n) ? n : 0;
   if (f === "exam") return Math.max(0, Math.min(100, v));
   if (f === "group" || f === "project") return Math.max(0, Math.min(20, v));
-  if (["cat1", "cat2", "cat3", "cat4"].includes(f)) return Math.max(0, Math.min(10, v));
+  if (["cat1", "cat2", "cat3", "cat4"].includes(f))
+    return Math.max(0, Math.min(10, v));
   return Math.max(0, v);
 };
 
-export async function parseAssessmentSheet(filePath: string): Promise<{ rows: Row[]; errors: string[] }> {
+export async function parseAssessmentSheet(
+  filePath: string
+): Promise<{ rows: Row[]; errors: string[] }> {
   const wb = XLSX.readFile(filePath);
   const ws = wb.Sheets[wb.SheetNames[0]];
   const json = XLSX.utils.sheet_to_json(ws) as Record<string, unknown>[];
   const errors: string[] = [];
-  const required = ["student_id", "cat1", "cat2", "cat3", "cat4", "group", "project", "exam"] as const;
-  const keys = json[0] ? Object.keys(json[0]).map((k) => k.toLowerCase().trim()) : [];
+  const required = [
+    "student_id",
+    "cat1",
+    "cat2",
+    "cat3",
+    "cat4",
+    "group",
+    "project",
+    "exam",
+  ] as const;
+  const normalizeKey = (k: string): string =>
+    k
+      .toLowerCase()
+      .trim()
+      .replace(/[\s-]+/g, "_")
+      .replace(/__+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  const alias: Record<string, string> = {
+    studentid: "student_id",
+    student_id: "student_id",
+    id: "student_id",
+    cat1_score: "cat1",
+    cat2_score: "cat2",
+    cat3_score: "cat3",
+    cat4_score: "cat4",
+    group_work: "group",
+    group_work_score: "group",
+    project_work: "project",
+    project_work_score: "project",
+    exam_score: "exam",
+  };
+  const mapKey = (raw: string): string => {
+    const n = normalizeKey(raw);
+    return alias[n] || n;
+  };
+  const keys = json[0] ? Object.keys(json[0]).map((k) => mapKey(k)) : [];
   const missing = required.filter((k) => !keys.includes(k));
   if (missing.length) errors.push(`Missing columns: ${missing.join(", ")}`);
-  const rows: Row[] = json.map((r, i) => {
-    const lower: Record<string, unknown> = {};
-    Object.keys(r).forEach((k) => (lower[k.toLowerCase().trim()] = (r as Record<string, unknown>)[k]));
-    const student_id = String(lower["student_id"] || lower["id"] || "").trim();
-    const fields = ["cat1", "cat2", "cat3", "cat4", "group", "project", "exam"] as const;
-    const base: Partial<Row> = { student_id };
-    fields.forEach((f) => {
-      const raw = parseFloat(String(lower[f] ?? ""));
-      if (!Number.isFinite(raw)) errors.push(`Row ${i + 2}: ${f} is not a number`);
-      const n = clamp(f, Number.isFinite(raw) ? raw : 0);
-      base[f] = n;
-    });
-    if (!student_id) errors.push(`Row ${i + 2}: missing student_id`);
-    return base as Row;
-  }).filter((r) => !!r.student_id);
+  const rows: Row[] = json
+    .map((r, i) => {
+      const lower: Record<string, unknown> = {};
+      Object.keys(r).forEach(
+        (k) => (lower[mapKey(k)] = (r as Record<string, unknown>)[k])
+      );
+      const student_id = String(lower["student_id"] || "").trim();
+      const fields = [
+        "cat1",
+        "cat2",
+        "cat3",
+        "cat4",
+        "group",
+        "project",
+        "exam",
+      ] as const;
+      const base: Partial<Row> = { student_id };
+      fields.forEach((f) => {
+        const raw = parseFloat(String(lower[f] ?? ""));
+        if (!Number.isFinite(raw))
+          errors.push(`Row ${i + 2}: ${f} is not a number`);
+        const n = clamp(f, Number.isFinite(raw) ? raw : 0);
+        base[f] = n;
+      });
+      if (!student_id) errors.push(`Row ${i + 2}: missing student_id`);
+      return base as Row;
+    })
+    .filter((r) => !!r.student_id);
   return { rows, errors };
 }
 
-async function ensureSession(conn: PoolConnection, academicYear: string, term: string): Promise<number> {
-  const [rows] = await conn.query("SELECT session_id FROM academic_sessions WHERE academic_year=? AND term=? LIMIT 1", [academicYear, term]);
+async function ensureSession(
+  conn: PoolConnection,
+  academicYear: string,
+  term: string
+): Promise<number> {
+  const [rows] = await conn.query(
+    "SELECT session_id FROM academic_sessions WHERE academic_year=? AND term=? LIMIT 1",
+    [academicYear, term]
+  );
   const arr = rows as Array<{ session_id: number }>;
   if (arr.length) return arr[0].session_id;
   const [res] = await conn.query<ResultSetHeader>(
@@ -59,10 +116,19 @@ async function ensureSession(conn: PoolConnection, academicYear: string, term: s
   return res.insertId as number;
 }
 
-export async function saveMarksTransaction(conn: PoolConnection, subjectName: string, academicYear: string, term: string, rows: Row[]): Promise<void> {
+export async function saveMarksTransaction(
+  conn: PoolConnection,
+  subjectName: string,
+  academicYear: string,
+  term: string,
+  rows: Row[]
+): Promise<void> {
   await conn.beginTransaction();
   try {
-    const [subRows] = await conn.query("SELECT subject_id FROM subjects WHERE subject_name=? LIMIT 1", [subjectName]);
+    const [subRows] = await conn.query(
+      "SELECT subject_id FROM subjects WHERE subject_name=? LIMIT 1",
+      [subjectName]
+    );
     const sArr = subRows as Array<{ subject_id: number }>;
     if (!sArr.length) throw new Error("Subject not found");
     const subject_id = sArr[0].subject_id;
@@ -73,7 +139,18 @@ export async function saveMarksTransaction(conn: PoolConnection, subjectName: st
         `INSERT INTO assessments (student_id, subject_id, session_id, cat1_score, cat2_score, cat3_score, cat4_score, group_work_score, project_work_score, exam_score)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE cat1_score=VALUES(cat1_score), cat2_score=VALUES(cat2_score), cat3_score=VALUES(cat3_score), cat4_score=VALUES(cat4_score), group_work_score=VALUES(group_work_score), project_work_score=VALUES(project_work_score), exam_score=VALUES(exam_score)`,
-        [r.student_id, subject_id, session_id, r.cat1, r.cat2, r.cat3, r.cat4, r.group, r.project, r.exam]
+        [
+          r.student_id,
+          subject_id,
+          session_id,
+          r.cat1,
+          r.cat2,
+          r.cat3,
+          r.cat4,
+          r.group,
+          r.project,
+          r.exam,
+        ]
       );
     }
     await conn.commit();

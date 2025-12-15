@@ -37,7 +37,14 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 type KVScope = "local" | "session";
-const KV_ALLOWED_PREFIXES = ["STORAGE::", "SYNC::", "ASSESSREPO::", "marks:", "API_AUTH_TOKEN", "BLOB_RW_TOKEN"];
+const KV_ALLOWED_PREFIXES = [
+  "STORAGE::",
+  "SYNC::",
+  "ASSESSREPO::",
+  "marks:",
+  "API_AUTH_TOKEN",
+  "BLOB_RW_TOKEN",
+];
 
 function kvKey(key: string): string {
   return `${LS_NS}${key}`;
@@ -59,7 +66,10 @@ export function kvSet(scope: KVScope, key: string, value: unknown): void {
 
 export function kvGet<T>(scope: KVScope, key: string): T | null {
   try {
-    const raw = scope === "session" ? sessionStorage.getItem(kvKey(key)) : localStorage.getItem(kvKey(key));
+    const raw =
+      scope === "session"
+        ? sessionStorage.getItem(kvKey(key))
+        : localStorage.getItem(kvKey(key));
     if (!raw) return null;
     return JSON.parse(raw) as T;
   } catch (e) {
@@ -96,7 +106,11 @@ export function kvEnsureStandard(): { ok: boolean; violations: string[] } {
     logger.warn("kv_inspect_failed", e);
   }
   const ok = violations.length === 0;
-  if (!ok) logger.warn("kv_standard_violations", { count: violations.length, keys: violations.slice(0, 50) });
+  if (!ok)
+    logger.warn("kv_standard_violations", {
+      count: violations.length,
+      keys: violations.slice(0, 50),
+    });
   return { ok, violations };
 }
 function uid(): string {
@@ -158,7 +172,7 @@ async function encryptData(
   const buf = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: iv as unknown as BufferSource },
     key,
-    data
+    new Uint8Array(data)
   );
   return { buf, iv, salt };
 }
@@ -173,7 +187,7 @@ async function decryptData(
   return crypto.subtle.decrypt(
     { name: "AES-GCM", iv: iv as unknown as BufferSource },
     key,
-    data
+    new Uint8Array(data)
   );
 }
 
@@ -389,12 +403,12 @@ export async function getData(
             const ab = await new Response(
               new Blob([buf]).stream().pipeThrough(ds)
             ).arrayBuffer();
-            return { meta, data: dec.decode(ab) };
+            return { meta, data: dec.decode(new Uint8Array(ab)) };
           } catch (e) {
             logger.warn("storage_decompress_failed", e);
           }
         }
-        return { meta, data: dec.decode(buf) };
+        return { meta, data: dec.decode(new Uint8Array(buf)) };
       }
       return { meta, data: buf };
     }
@@ -423,12 +437,12 @@ export async function getData(
           const ab = await new Response(
             new Blob([buf]).stream().pipeThrough(ds)
           ).arrayBuffer();
-          return { meta, data: dec.decode(ab) };
+          return { meta, data: dec.decode(new Uint8Array(ab)) };
         } catch (e) {
           logger.warn("storage_decompress_failed", e);
         }
       }
-      return { meta, data: dec.decode(buf) };
+      return { meta, data: dec.decode(new Uint8Array(buf)) };
     }
     return { meta, data: buf };
   } catch (e) {

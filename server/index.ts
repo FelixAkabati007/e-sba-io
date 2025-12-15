@@ -6,7 +6,11 @@ import path from "path";
 import crypto from "crypto";
 import fs from "fs";
 import rateLimit from "express-rate-limit";
-import { parseAssessmentSheet } from "./services/assessments";
+import {
+  parseAssessmentSheet,
+  saveMarksTransaction,
+} from "./services/assessments";
+import { audit } from "./services/assessmentRepo";
 import {
   saveMarksSupabase,
   getSubjectSheetSupabase,
@@ -37,6 +41,28 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/blobdb", blobdbRouter);
 app.use("/api/sync", syncRouter);
 app.use("/api/assessrepo", assessRepoRouter);
+
+// Global error handler to ensure JSON errors (including Multer/file upload issues)
+app.use(
+  (
+    err: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    void _next;
+    const e = err as Error;
+    const msg = e?.message || "Server error";
+    const isUploadErr =
+      e?.name === "MulterError" || msg.toLowerCase().includes("invalid file");
+    const status = isUploadErr ? 400 : 500;
+    try {
+      res.status(status).json({ error: msg });
+    } catch {
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
 
 app.get("/api/db/health", async (_req: Request, res: Response) => {
   try {
@@ -149,27 +175,98 @@ app.post(
       if (!safe)
         return res.status(400).json({ error: "File failed security scan" });
 
+      await audit("assessment_upload_attempt", {
+        subject,
+        academicYear,
+        term,
+        filename: req.file.originalname,
+        size: req.file.size,
+      });
       const { rows, errors } = await parseAssessmentSheet(req.file.path);
+      await audit("assessment_upload_parsed", {
+        subject,
+        academicYear,
+        term,
+        rows: rows.length,
+        errorsCount: errors.length,
+        errors: errors.slice(0, 10),
+      });
       if (rows.length === 0)
         return res.status(400).json({ error: "No valid rows", errors });
 
       try {
-        if (!supabaseAdmin)
-          return res.status(500).json({ error: "Supabase not configured" });
-        await saveMarksSupabase(subject, academicYear, term, rows);
-        res.json({ ok: true, processed: rows.length, errors });
+        if (supabaseAdmin) {
+          await saveMarksSupabase(subject, academicYear, term, rows);
+          await audit("assessment_upload_saved", {
+            subject,
+            academicYear,
+            term,
+            processed: rows.length,
+          });
+          res.json({ ok: true, processed: rows.length, errors });
+        } else {
+          const conn = await pool.getConnection();
+          try {
+            await saveMarksTransaction(conn, subject, academicYear, term, rows);
+            await audit("assessment_upload_saved_db", {
+              subject,
+              academicYear,
+              term,
+              processed: rows.length,
+            });
+            res.json({ ok: true, processed: rows.length, errors });
+          } catch (dbErr) {
+            const emsg = (dbErr as Error).message || "Upload failed";
+            if (emsg.toLowerCase().includes("subject not found")) {
+              await audit("assessment_upload_failed", {
+                subject,
+                academicYear,
+                term,
+                error: "Subject not found",
+              });
+              return res.status(400).json({
+                error:
+                  "Selected subject is not configured. Please choose a valid subject.",
+              });
+            }
+            await audit("assessment_upload_failed", {
+              subject,
+              academicYear,
+              term,
+              error: emsg,
+            });
+            return res.status(500).json({ error: emsg });
+          } finally {
+            conn.release();
+          }
+        }
       } catch (err) {
         const msg = (err as Error).message || "Upload failed";
         if (msg.toLowerCase().includes("subject not found")) {
+          await audit("assessment_upload_failed", {
+            subject,
+            academicYear,
+            term,
+            error: "Subject not found",
+          });
           return res.status(400).json({
             error:
               "Selected subject is not configured. Please choose a valid subject.",
           });
         }
+        await audit("assessment_upload_failed", {
+          subject,
+          academicYear,
+          term,
+          error: msg,
+        });
         return res.status(500).json({ error: msg });
       }
     } catch (e) {
       const err = e as Error;
+      await audit("assessment_upload_exception", {
+        error: err.message || "Upload failed",
+      });
       res.status(500).json({ error: err.message || "Upload failed" });
     }
   }
@@ -649,19 +746,90 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
     if (!subject || !className || !academicYear || !term) {
       return res.status(400).json({ error: "Missing required parameters" });
     }
-    if (!supabaseAdmin)
-      return res.status(500).json({ error: "Supabase not configured" });
-    const rows = await getSubjectSheetSupabase(
-      className,
-      subject,
-      academicYear,
-      term
-    );
-    res.json({ rows });
+    if (supabaseAdmin) {
+      try {
+        const rows = await getSubjectSheetSupabase(
+          className,
+          subject,
+          academicYear,
+          term
+        );
+        res.json({ rows });
+      } catch {
+        res.json({ rows: [] });
+      }
+    } else {
+      const conn = await pool.getConnection();
+      try {
+        const [subRows] = await conn.query(
+          "SELECT subject_id, subject_name FROM subjects WHERE subject_name=? LIMIT 1",
+          [subject]
+        );
+        const sArr = subRows as Array<{
+          subject_id: number;
+          subject_name: string;
+        }>;
+        if (!sArr.length) {
+          return res.status(400).json({
+            error:
+              "Selected subject is not configured. Please choose a valid subject.",
+          });
+        }
+        const subject_id = sArr[0].subject_id;
+        const [sessRows] = await conn.query(
+          "SELECT session_id FROM academic_sessions WHERE academic_year=? AND term=? LIMIT 1",
+          [academicYear, term]
+        );
+        let session_id = (sessRows as Array<{ session_id: number }>)[0]
+          ?.session_id;
+        if (!session_id) {
+          const [ins] = await conn.query(
+            "INSERT INTO academic_sessions (academic_year, term, is_active) VALUES (?, ?, FALSE)",
+            [academicYear, term]
+          );
+          session_id = (ins as { insertId: number }).insertId;
+        }
+        const [rows] = await conn.query(
+          `SELECT s.student_id,
+                  s.surname,
+                  s.first_name,
+                  c.class_name,
+                  ? AS subject_name,
+                  COALESCE(a.cat1_score, 0) AS cat1_score,
+                  COALESCE(a.cat2_score, 0) AS cat2_score,
+                  COALESCE(a.cat3_score, 0) AS cat3_score,
+                  COALESCE(a.cat4_score, 0) AS cat4_score,
+                  COALESCE(a.group_work_score, 0) AS group_work_score,
+                  COALESCE(a.project_work_score, 0) AS project_work_score,
+                  COALESCE(a.exam_score, 0) AS exam_score,
+                  (COALESCE(a.cat1_score,0)+COALESCE(a.cat2_score,0)+COALESCE(a.cat3_score,0)+COALESCE(a.cat4_score,0)+COALESCE(a.group_work_score,0)+COALESCE(a.project_work_score,0)) AS raw_sba_total
+           FROM students s
+           JOIN classes c ON s.current_class_id = c.class_id
+           LEFT JOIN assessments a
+             ON a.student_id = s.student_id
+            AND a.subject_id = ?
+            AND a.session_id = ?
+           WHERE c.class_name = ?
+           ORDER BY s.surname, s.first_name`,
+          [subject, subject_id, session_id, className]
+        );
+        res.json({ rows: rows as unknown[] });
+      } finally {
+        conn.release();
+      }
+    }
   } catch (e) {
     const err = e as Error;
     const msg = err.message || "Failed to load subject sheet";
-    const code = msg.toLowerCase().includes("subject not found") ? 400 : 500;
+    const lower = msg.toLowerCase();
+    if (
+      lower.includes("access denied") ||
+      lower.includes("using password") ||
+      lower.includes("authentication")
+    ) {
+      return res.json({ rows: [] });
+    }
+    const code = lower.includes("subject not found") ? 400 : 500;
     res.status(code).json({ error: msg });
   }
 });
