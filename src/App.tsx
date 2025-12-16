@@ -52,6 +52,7 @@ import {
   kvSet,
   kvRemove,
 } from "./lib/storage";
+import { SystemConfigStorage, type SchoolConfig } from "./lib/configStorage";
 import { buildImportedStudents } from "./lib/masterdbImport";
 
 const MasterDBSyncControls: React.FC = () => null;
@@ -535,6 +536,39 @@ export default function App() {
         .catch(() => void 0);
     }
   }, [marks]);
+
+  // Load System Config
+  useEffect(() => {
+    const loadConfig = async () => {
+      try {
+        const { school, academic } = await SystemConfigStorage.loadAll();
+        if (school) {
+          setSchoolConfig(school);
+          logger.info("system_config_loaded", { type: "school" });
+        }
+        if (academic) {
+          setAcademicYear(academic.academicYear);
+          setTerm(academic.term);
+          logger.info("system_config_loaded", { type: "academic" });
+        }
+      } catch (e) {
+        logger.error("system_config_load_failed", e);
+      }
+    };
+    loadConfig();
+  }, []);
+
+  // Save System Config
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      try {
+        await SystemConfigStorage.saveAll(schoolConfig, { academicYear, term });
+      } catch (e) {
+        logger.error("system_config_save_failed", e);
+      }
+    }, 1000); // Debounce save
+    return () => clearTimeout(timer);
+  }, [schoolConfig, academicYear, term]);
 
   useEffect(() => {
     setReportId("");
@@ -1029,44 +1063,108 @@ export default function App() {
             doc.setFontSize(8);
             doc.text("Logo", 22, 25);
           }
-          doc.setFontSize(18);
+          let currentY = 20;
+          const centerX = 105;
+          const maxWidth = 180;
+
+          // School Name
+          doc.setFontSize(20);
           doc.setFont("helvetica", "bold");
-          doc.text(schoolConfig.name.toUpperCase(), 105, 20, {
+          const nameLines = doc.splitTextToSize(
+            schoolConfig.name.toUpperCase(),
+            160
+          );
+          doc.text(nameLines, centerX, currentY, {
+            align: "center",
+            charSpace: 1,
+          });
+          currentY += nameLines.length * 8; // ~8mm per line for 20pt
+
+          // Address
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "normal");
+          const addressLines = doc.splitTextToSize(
+            schoolConfig.address,
+            maxWidth
+          );
+          doc.text(addressLines, centerX, currentY, { align: "center" });
+          currentY += addressLines.length * 5 + 2;
+
+          // Motto
+          doc.setFontSize(10);
+          doc.setFont("helvetica", "italic");
+          const mottoText = `"${schoolConfig.motto.trim().toUpperCase()}"`;
+          const mottoLines = doc.splitTextToSize(mottoText, 160);
+          doc.text(mottoLines, centerX, currentY, {
             align: "center",
           });
-          doc.setFontSize(10);
-          doc.setFont("helvetica", "normal");
-          doc.text(schoolConfig.address, 105, 26, { align: "center" });
-          doc.setFont("helvetica", "italic");
-          doc.text(`"${schoolConfig.motto}"`, 105, 32, { align: "center" });
+          currentY += mottoLines.length * 5 + 4;
+
+          // Decorative Divider
           doc.setDrawColor(0);
           doc.setLineWidth(0.5);
-          doc.line(10, 40, 200, 40);
-          doc.setFontSize(12);
+          doc.line(15, currentY, 195, currentY);
+          currentY += 10;
+
+          // Report Title
+          doc.setFontSize(18);
           doc.setFont("helvetica", "bold");
-          doc.text("TERMINAL REPORT", 105, 48, { align: "center" });
+          doc.text("TERMINAL REPORT", centerX, currentY, { align: "center" });
+          currentY += 4;
+
+          // Bottom Divider
+          doc.setLineWidth(0.5);
+          doc.line(15, currentY, 195, currentY);
+
+          // Update startY for content
           doc.setFontSize(10);
           doc.setFont("helvetica", "normal");
-          const startY = 55;
+          const startY = currentY + 10;
           const leftX = 15;
           const rightX = 110;
           const lineHeight = 7;
-          doc.text(
-            `Name: ${student.surname}, ${student.firstName} ${student.middleName}`,
+          const drawField = (
+            label: string,
+            value: string,
+            x: number,
+            y: number,
+            maxWidth?: number
+          ) => {
+            doc.setFont("helvetica", "bold");
+            doc.text(label, x, y);
+            const labelWidth = doc.getTextWidth(label);
+            doc.setFont("helvetica", "normal");
+            const val = value || "";
+            if (maxWidth) {
+              const availableWidth = maxWidth - labelWidth - 2;
+              const lines = doc.splitTextToSize(val, availableWidth);
+              doc.text(lines, x + labelWidth + 2, y);
+            } else {
+              doc.text(val, x + labelWidth + 2, y);
+            }
+          };
+
+          drawField(
+            "Name:",
+            `${student.surname}, ${student.firstName} ${student.middleName}`,
             leftX,
             startY
           );
-          doc.text(`ID: ${student.id}`, rightX, startY);
-          doc.text(`Class: ${student.class}`, leftX, startY + lineHeight);
-          doc.text(
-            `Term: ${term}, ${academicYear}`,
+          drawField("ID:", student.id, rightX, startY);
+          drawField("Class:", student.class, leftX, startY + lineHeight);
+          drawField(
+            "Term:",
+            `${term}, ${academicYear}`,
             rightX,
             startY + lineHeight
           );
-          doc.text(
-            `No. on Roll: ${filteredStudents.length}`,
-            leftX,
-            startY + lineHeight * 2
+          drawField("DOB:", student.dob, leftX, startY + lineHeight * 2);
+          drawField(
+            "Contact:",
+            student.guardianContact,
+            rightX,
+            startY + lineHeight * 2,
+            85
           );
           const subjectRanks: Record<string, string> = {};
           SUBJECTS.forEach((subj) => {
@@ -1142,98 +1240,214 @@ export default function App() {
           let y =
             (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable
               .finalY + 10;
+          const baseY = y;
+          const col1X = 15;
+          const col2X = 77.5;
+          const col3X = 140;
+          const colWidth = 55;
+
+          // --- Column 1: Grading System ---
           doc.setFontSize(8);
           doc.setFont("helvetica", "bold");
-          doc.text("GRADING OVERVIEW", 15, y);
+          doc.text("GRADING SYSTEM", col1X, baseY);
+
           const gradeRows = gradingSystem.map((band) => [
             String(band.grade),
             `${band.min}–${band.max}`,
             band.desc,
           ]);
+
           (doc as jsPDF & { autoTable: (opts: unknown) => void }).autoTable({
-            head: [["Grade", "Range", "Description"]],
+            head: [["Grade", "Range", "Remark"]],
             body: gradeRows,
-            startY: y + 4,
+            startY: baseY + 4,
             theme: "grid",
-            margin: { left: PAGE_MARGIN, right: PAGE_MARGIN },
+            margin: { left: col1X },
+            tableWidth: colWidth,
             headStyles: {
               fontSize: 6,
               fillColor: [230, 230, 230],
               textColor: 60,
+              halign: "left",
             },
             styles: {
               fontSize: 6,
               valign: "middle",
-              halign: "center",
-              cellPadding: 0.5,
+              halign: "left",
+              cellPadding: 1,
               lineWidth: 0.1,
             },
-            tableWidth: "wrap",
             columnStyles: {
-              0: { cellWidth: 15 },
-              1: { cellWidth: 30 },
-              2: { halign: "left", cellWidth: 70 },
+              0: { cellWidth: 10 },
+              1: { cellWidth: 20 },
+              2: { cellWidth: "auto" },
             },
           });
-          y =
-            (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable
-              .finalY + 10;
-          doc.setFontSize(10);
+
+          const col1End = (doc as jsPDF & { lastAutoTable: { finalY: number } })
+            .lastAutoTable.finalY;
+
+          // --- Column 2: Student Report ---
+          let y2 = baseY;
+          doc.setFontSize(8);
           doc.setFont("helvetica", "bold");
-          doc.text("Attendance:", 15, y);
+          doc.text("STUDENT REPORT", col2X, y2);
+          y2 += 8;
+
+          // Attendance
+          doc.setFontSize(7);
+          doc.setFont("helvetica", "bold");
+          doc.text("ATTENDANCE", col2X, y2);
+          y2 += 4;
+
+          const outOfText = " out of ";
           doc.setFont("helvetica", "normal");
-          doc.text(` ${"_".repeat(25)} out of ${"_".repeat(25)}`, 45, y);
-          y += 10;
+          const outOfWidth = doc.getTextWidth(outOfText);
+          const lineLength = (colWidth - outOfWidth - 2) / 2;
+
+          doc.setLineWidth(0.1);
+          doc.setLineDash([], 0);
+
+          // Field 1
+          doc.line(col2X, y2, col2X + lineLength, y2);
+          if (attendancePresent) {
+            doc.text(attendancePresent, col2X + lineLength / 2, y2 - 1, {
+              align: "center",
+            });
+          }
+
+          // Separator
+          doc.text(outOfText, col2X + lineLength + 1, y2);
+
+          // Field 2
+          const startX2 = col2X + lineLength + 1 + outOfWidth + 1;
+          doc.line(startX2, y2, startX2 + lineLength, y2);
+          if (attendanceTotal) {
+            doc.text(attendanceTotal, startX2 + lineLength / 2, y2 - 1, {
+              align: "center",
+            });
+          }
+
+          y2 += 8;
+
+          // Talent
           doc.setFont("helvetica", "bold");
-          doc.text("Talent and Interest:", 15, y);
+          doc.text("TALENT & INTEREST", col2X, y2);
+          y2 += 4;
           doc.setFont("helvetica", "normal");
           const talentText =
             talentRemark === "Other" && talentRemarkOther
               ? talentRemarkOther
               : talentRemark || "";
+
           if (talentText) {
-            doc.text(talentText, 15, y + 6);
-            y += 14;
+            const splitTalent = doc.splitTextToSize(talentText, colWidth);
+            doc.text(splitTalent, col2X, y2);
+            // Add underline for the text
+            doc.line(col2X, y2 + 1, col2X + colWidth, y2 + 1);
+            y2 += Math.max(splitTalent.length * 5, 8);
+            // Add an extra line for visual balance
+            doc.line(col2X, y2, col2X + colWidth, y2);
+            y2 += 5;
           } else {
-            doc.line(15, y + 6, 200, y + 6);
-            y += 14;
+            // 3 solid lines for manual entry
+            for (let i = 0; i < 3; i++) {
+              doc.line(col2X, y2 + i * 6, col2X + colWidth, y2 + i * 6);
+            }
+            y2 += 18;
           }
+          y2 += 4;
+
+          // Class Teacher Remark
           doc.setFont("helvetica", "bold");
-          doc.text("Class Teacher's Remarks:", 15, y);
+          doc.text("CLASS TEACHER'S REMARK", col2X, y2);
+          y2 += 4;
           doc.setFont("helvetica", "normal");
           const teacherText =
             teacherRemark === "Other" && teacherRemarkOther
               ? teacherRemarkOther
               : teacherRemark || "";
+
           if (teacherText) {
-            doc.text(teacherText, 15, y + 6);
-            y += 14;
+            const splitTeacher = doc.splitTextToSize(teacherText, colWidth);
+            doc.text(splitTeacher, col2X, y2);
+            // Add underline for the text
+            doc.line(col2X, y2 + 1, col2X + colWidth, y2 + 1);
+            y2 += Math.max(splitTeacher.length * 5, 8);
+            // Add extra lines for visual balance
+            doc.line(col2X, y2, col2X + colWidth, y2);
+            y2 += 5;
+            doc.line(col2X, y2, col2X + colWidth, y2);
+            y2 += 5;
           } else {
-            doc.line(15, y + 6, 200, y + 6);
-            y += 14;
+            // 4 solid lines for manual entry
+            for (let i = 0; i < 4; i++) {
+              doc.line(col2X, y2 + i * 6, col2X + colWidth, y2 + i * 6);
+            }
+            y2 += 24;
           }
+
+          // --- Column 3: Head Teacher ---
+          let y3 = baseY;
           doc.setFont("helvetica", "bold");
-          doc.text("Headmaster's Remarks:", 15, y);
-          doc.setFont("helvetica", "normal");
-          doc.line(15, y + 6, 200, y + 6);
-          y += 22;
+          doc.text("HEAD TEACHER", col3X, y3);
+          y3 += 8;
+
+          doc.text("HEADMASTER'S REMARKS", col3X, y3);
+          y3 += 4;
+          doc.setLineDash([1, 1], 0);
+          doc.line(col3X, y3, col3X + colWidth, y3);
+          y3 += 5;
+          doc.line(col3X, y3, col3X + colWidth, y3);
+          doc.setLineDash([], 0);
+          y3 += 4;
+
+          // --- Signatures (Aligned at bottom) ---
+          // Determine max Y to start signatures
+          const contentMaxY = Math.max(col1End, y2, y3) + 10;
+
+          // Class Teacher Signature (Col 2)
+          const sigY = contentMaxY + 15; // Space for signature
+          doc.setDrawColor(0);
           doc.setLineWidth(0.2);
-          doc.line(20, y, 80, y);
-          doc.text("Class Teacher's Signature", 25, y + 5);
-          doc.line(130, y, 190, y);
-          doc.text("Head Teacher's Signature", 135, y + 5);
-          doc.setFontSize(8);
-          doc.setTextColor(120);
-          doc.text("Generated by E-SBA [JHS]", 25, y + 18);
-          doc.setTextColor(0);
+          doc.line(col2X, sigY, col2X + colWidth, sigY);
+          doc.setFontSize(7);
+          doc.setFont("helvetica", "bold");
+          doc.text(
+            "Class Teacher's Signature",
+            col2X + colWidth / 2,
+            sigY + 4,
+            { align: "center" }
+          );
+
+          // Head Teacher Signature (Col 3)
           if (schoolConfig.signatureEnabled && headSignatureDataUrl) {
             const fmt: "JPEG" | "PNG" = headSignatureDataUrl.startsWith(
               "data:image/jpeg"
             )
               ? "JPEG"
               : "PNG";
-            doc.addImage(headSignatureDataUrl, fmt, 130, y - 20, 60, 20);
+            // Center image in column
+            doc.addImage(
+              headSignatureDataUrl,
+              fmt,
+              col3X + 5,
+              sigY - 15,
+              colWidth - 10,
+              15
+            );
           }
+          doc.line(col3X, sigY, col3X + colWidth, sigY);
+          doc.text("Head Teacher's Signature", col3X + colWidth / 2, sigY + 4, {
+            align: "center",
+          });
+
+          doc.setFont("helvetica", "italic");
+          doc.setTextColor(150);
+          doc.text("Generated by E-SBA [JHS]", col3X + colWidth / 2, sigY + 8, {
+            align: "center",
+          });
+          doc.setTextColor(0);
         });
         const filename = studentId
           ? `Report_${studentId}.pdf`
@@ -1242,6 +1456,25 @@ export default function App() {
               "-"
             )}.pdf`;
         doc.save(filename);
+
+        // --- Auto-Print Logic ---
+        // Create a Blob from the PDF and open it in an invisible iframe to trigger the print dialog
+        const pdfBlob = doc.output("blob");
+        const blobUrl = URL.createObjectURL(pdfBlob);
+        const iframe = document.createElement("iframe");
+        iframe.style.display = "none";
+        iframe.src = blobUrl;
+        document.body.appendChild(iframe);
+        iframe.onload = () => {
+          if (iframe.contentWindow) {
+            iframe.contentWindow.print();
+          }
+        };
+        // Clean up the iframe and URL object after a delay
+        setTimeout(() => {
+          document.body.removeChild(iframe);
+          URL.revokeObjectURL(blobUrl);
+        }, 60000); // 1 minute delay to allow user to interact with print dialog
       } catch (e) {
         logger.error("Report PDF error", e);
       }
@@ -1922,6 +2155,8 @@ export default function App() {
     return "w-full";
   };
   // Class remarks and attendance data intentionally removed per data purge request
+  const [attendancePresent, setAttendancePresent] = useState("");
+  const [attendanceTotal, setAttendanceTotal] = useState("");
   const [talentRemark, setTalentRemark] = useState("");
   const [talentRemarkOther, setTalentRemarkOther] = useState("");
   const [talentRemarkError, setTalentRemarkError] = useState<string | null>(
@@ -2907,7 +3142,9 @@ export default function App() {
                 talentRemarkError ? "border-red-500" : "border-slate-300"
               }`}
               aria-label="Talent and interest remark"
-              aria-invalid={talentRemarkError ? "true" : "false"}
+              aria-invalid={Boolean(talentRemarkError)}
+              aria-errormessage="talent-remark-error"
+              onInvalid={() => setTalentRemarkError("Required")}
               required
             >
               <option value="" title="Required">
@@ -2923,6 +3160,15 @@ export default function App() {
                 </optgroup>
               ))}
             </select>
+            {talentRemarkError && (
+              <p
+                id="talent-remark-error"
+                className="text-red-600 text-sm mt-1"
+                role="alert"
+              >
+                {talentRemarkError}
+              </p>
+            )}
             {talentRemark === "Other" && (
               <input
                 id="talent-remark-other-empty"
@@ -3033,7 +3279,7 @@ export default function App() {
           </button>
         </div>
         <div className="bg-white p-8 shadow-lg border border-slate-200 min-h-[800px]">
-          <div className="text-center border-b-2 border-slate-800 pb-4 mb-6 relative">
+          <div className="text-center mb-6 relative">
             <div className="flex justify-center mb-2">
               {schoolConfig.logoUrl ? (
                 <img
@@ -3045,15 +3291,20 @@ export default function App() {
                 <GraduationCap size={48} className="text-blue-900" />
               )}
             </div>
-            <h1 className="text-2xl font-black text-slate-900 uppercase tracking-widest">
+            <h1 className="text-3xl font-black text-slate-900 uppercase tracking-widest px-4">
               {schoolConfig.name}
             </h1>
-            <p className="text-sm font-semibold text-slate-600">
-              MOTTO: {schoolConfig.motto}
+            <p className="text-sm text-slate-600 mt-1 px-4">
+              {schoolConfig.address}
             </p>
-            <div className="mt-4 bg-slate-800 text-white py-1 px-4 inline-block rounded-full text-sm font-bold">
-              STUDENT PERFORMANCE REPORT
-            </div>
+            <p className="text-base italic font-serif text-slate-700 mt-2 px-4 uppercase tracking-widest">
+              "{schoolConfig.motto}"
+            </p>
+            <div className="border-b border-slate-800 my-4"></div>
+            <h2 className="text-2xl font-bold text-slate-900 uppercase tracking-widest py-2">
+              TERMINAL REPORT
+            </h2>
+            <div className="border-b border-slate-800 mb-6"></div>
           </div>
           <div className="grid grid-cols-2 gap-4 text-sm mb-6 border border-slate-300 p-4 rounded bg-slate-50">
             <div>
@@ -3159,165 +3410,271 @@ export default function App() {
             </tbody>
           </table>
           <div className="mt-6 bg-white p-6 rounded-lg border border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-4">
-              Grading Overview
+            <h3 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-100 pb-4">
+              Report Overview
             </h3>
 
-            <div className="mt-4 text-xs text-slate-600">
-              <div className="font-semibold mb-2">Grading Scale</div>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {gradingSystem.map((band) => (
-                  <div
-                    key={`${band.grade}-${band.min}`}
-                    className="border border-slate-200 rounded p-2"
-                    title={`${band.min}–${band.max}: ${band.desc}`}
-                  >
-                    <div className="font-bold">Grade {band.grade}</div>
-                    <div>
-                      {band.min}–{band.max}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Column 1: Grading System */}
+              <div className="flex flex-col space-y-4">
+                <div className="font-bold text-slate-700 text-sm uppercase tracking-wider border-b-2 border-slate-100 pb-2">
+                  Grading System
+                </div>
+                <div className="flex-1">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-slate-500 border-b border-slate-100">
+                        <th className="pb-2 font-semibold">Grade</th>
+                        <th className="pb-2 font-semibold">Range</th>
+                        <th className="pb-2 font-semibold">Remark</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {gradingSystem.map((band) => (
+                        <tr key={`${band.grade}-${band.min}`}>
+                          <td className="py-2 font-bold text-slate-700">
+                            {band.grade}
+                          </td>
+                          <td className="py-2 text-slate-600">
+                            {band.min} – {band.max}
+                          </td>
+                          <td className="py-2 text-slate-600">{band.desc}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Column 2: Student Report */}
+              <div className="flex flex-col space-y-4">
+                <div className="font-bold text-slate-700 text-sm uppercase tracking-wider border-b-2 border-slate-100 pb-2">
+                  Student Report
+                </div>
+
+                <div className="space-y-4 flex-1">
+                  {/* Attendance */}
+                  <div className="bg-slate-50 p-3 rounded border border-slate-100">
+                    <div className="text-xs font-semibold text-slate-600 mb-2">
+                      ATTENDANCE
                     </div>
-                    <div className="text-slate-500">{band.desc}</div>
+                    <div className="flex items-end gap-2 text-xs text-slate-600 justify-center">
+                      <input
+                        type="number"
+                        min="0"
+                        className="w-16 border-b border-slate-400 bg-transparent text-center focus:outline-none focus:border-blue-500 px-1"
+                        placeholder="0"
+                        value={attendancePresent}
+                        onChange={(e) => setAttendancePresent(e.target.value)}
+                        aria-label="Days present"
+                      />
+                      <span className="mb-1 font-medium">out of</span>
+                      <input
+                        type="number"
+                        min="0"
+                        className="w-16 border-b border-slate-400 bg-transparent text-center focus:outline-none focus:border-blue-500 px-1"
+                        placeholder="0"
+                        value={attendanceTotal}
+                        onChange={(e) => setAttendanceTotal(e.target.value)}
+                        aria-label="Total days"
+                      />
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div className="mt-8 bg-white p-6 rounded-lg border border-slate-200">
-            <div className="mb-4 text-lg font-bold text-slate-800">
-              <div className="text-center font-bold text-lg text-slate-800 mb-2">
-                Student Attendance Report
-              </div>
-              <div className="text-sm text-slate-700 mb-4 text-center">
-                {schoolConfig.name} • {student.surname}, {student.firstName} —{" "}
-                {student.class}
-                {[student.firstName, student.middleName, student.surname]
-                  .filter(Boolean)
-                  .join(" ")}{" "}
-                — {student.class}
-              </div>
-              <div className="text-base font-semibold mb-4">
-                Attendance: {"_".repeat(25)} out of {"_".repeat(25)}
-              </div>
-              <div className="my-4"></div>
-              <div className="mb-4 text-lg font-bold text-slate-800">
-                Talent and Interest:
-              </div>
-              <label htmlFor="talent-remark" className="text-slate-700">
-                Select template
-              </label>
-              <select
-                id="talent-remark"
-                value={talentRemark}
-                onChange={(e) => {
-                  setTalentRemark(e.target.value);
-                  const err = e.target.value ? null : "Required";
-                  setTalentRemarkError(err);
-                  logger.info("talent_remark_changed", {
-                    value: e.target.value,
-                  });
-                }}
-                className={`w-full border rounded p-2 bg-white mb-3 ${
-                  talentRemarkError ? "border-red-500" : "border-slate-300"
-                }`}
-                aria-label="Talent and interest remark"
-                aria-invalid={talentRemarkError ? "true" : "false"}
-                required
-              >
-                <option value="" title="Required">
-                  Select a template
-                </option>
-                {talentRemarkOptionsGrouped.map((g) => (
-                  <optgroup key={g.group} label={g.group}>
-                    {g.options.map((opt) => (
-                      <option key={`${g.group}-${opt}`} value={opt} title={opt}>
-                        {opt}
+
+                  {/* Talent */}
+                  <div>
+                    <label
+                      htmlFor="talent-remark"
+                      className="block text-xs font-bold text-slate-700 mb-1.5"
+                    >
+                      TALENT & INTEREST
+                    </label>
+                    <select
+                      id="talent-remark"
+                      value={talentRemark}
+                      onChange={(e) => {
+                        setTalentRemark(e.target.value);
+                        const err = e.target.value ? null : "Required";
+                        setTalentRemarkError(err);
+                        logger.info("talent_remark_changed", {
+                          value: e.target.value,
+                        });
+                      }}
+                      className={`w-full text-xs border-b border-slate-300 rounded-none p-2 bg-transparent focus:outline-none focus:border-blue-500 ${
+                        talentRemarkError ? "border-red-500" : ""
+                      }`}
+                      aria-label="Talent and interest remark"
+                      aria-invalid={talentRemarkError ? "true" : "false"}
+                      aria-errormessage="talent-remark-error-report"
+                      onInvalid={() => setTalentRemarkError("Required")}
+                      required
+                    >
+                      <option value="" title="Required">
+                        Select a template
                       </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              {talentRemark === "Other" && (
-                <input
-                  id="talent-remark-other-report"
-                  value={talentRemarkOther}
-                  onChange={(e) => {
-                    setTalentRemarkOther(e.target.value);
-                    const err =
-                      e.target.value.length >= 20
-                        ? null
-                        : "Minimum 20 characters";
-                    setTalentRemarkError(err);
-                  }}
-                  className={`w-full border rounded p-2 ${
-                    talentRemarkError ? "border-red-500" : "border-slate-300"
-                  }`}
-                  aria-label="Custom talent remark"
-                  placeholder="Specify other (min 20 characters)"
-                />
-              )}
-              {!talentRemarkError && talentRemark && (
-                <p className="text-xs text-green-700">Valid</p>
-              )}
-              Class Teacher's Remarks:
-            </div>
-            <label htmlFor="teacher-remark" className="text-slate-700">
-              Select remark
-            </label>
-            <select
-              id="teacher-remark"
-              data-testid="teacher-remark-select"
-              value={teacherRemark}
-              onChange={(e) => {
-                setTeacherRemark(e.target.value);
-                setTeacherRemarkError(e.target.value ? null : "Required");
-                logger.info("teacher_remark_changed", {
-                  value: e.target.value,
-                });
-              }}
-              className="w-full border border-slate-300 rounded p-2 bg-white mb-3"
-              aria-label="Teacher remark"
-              required
-            >
-              <option value="" title="Required">
-                Select a remark
-              </option>
-              {teacherRemarkOptions.map((opt) => (
-                <option key={opt} value={opt} title={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-            {teacherRemark === "Other" && (
-              <input
-                id="teacher-remark-other-report"
-                value={teacherRemarkOther}
-                onChange={(e) => setTeacherRemarkOther(e.target.value)}
-                className="w-full border border-slate-300 rounded p-2"
-                aria-label="Custom teacher remark"
-                placeholder="Specify other remark"
-              />
-            )}
-            {teacherRemarkError && (
-              <p className="text-xs text-red-600 mt-1">{teacherRemarkError}</p>
-            )}
-            <div className="mt-8 mb-2 text-lg font-bold text-slate-800">
-              Headmaster's Remarks:
-            </div>
-            <div
-              data-testid="headmaster-underscores"
-              className="text-base font-semibold"
-            >
-              {"_".repeat(100)}
-            </div>
-            <div className="mt-8 grid grid-cols-2 gap-8 text-sm">
-              <div className="border-t border-slate-400 pt-2 text-center">
-                <p className="font-bold">Class Teacher's Signature</p>
-                <p className="text-xs text-slate-500 mt-4">
-                  Generated by E-SBA [JHS]
-                </p>
+                      {talentRemarkOptionsGrouped.map((g) => (
+                        <optgroup key={g.group} label={g.group}>
+                          {g.options.map((opt) => (
+                            <option
+                              key={`${g.group}-${opt}`}
+                              value={opt}
+                              title={opt}
+                            >
+                              {opt}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    {/* Additional underscores for visual separation */}
+                    <div className="border-b border-slate-200 h-8 w-full"></div>
+                    <div className="border-b border-slate-200 h-8 w-full"></div>
+
+                    {talentRemarkError && (
+                      <p
+                        id="talent-remark-error-report"
+                        className="text-red-600 text-xs mt-1"
+                        role="alert"
+                      >
+                        {talentRemarkError}
+                      </p>
+                    )}
+                    {talentRemark === "Other" && (
+                      <input
+                        id="talent-remark-other-report"
+                        value={talentRemarkOther}
+                        onChange={(e) => {
+                          setTalentRemarkOther(e.target.value);
+                          const err =
+                            e.target.value.length >= 20
+                              ? null
+                              : "Minimum 20 characters";
+                          setTalentRemarkError(err);
+                        }}
+                        className={`w-full text-xs border-b border-slate-300 rounded-none p-2 mt-2 bg-transparent focus:outline-none focus:border-blue-500 ${
+                          talentRemarkError ? "border-red-500" : ""
+                        }`}
+                        aria-label="Custom talent remark"
+                        placeholder="Specify other (min 20 characters)"
+                      />
+                    )}
+                    {!talentRemarkError && talentRemark && (
+                      <p className="text-xs text-green-700 mt-1">Valid</p>
+                    )}
+                  </div>
+
+                  {/* Class Teacher Remark */}
+                  <div>
+                    <label
+                      htmlFor="teacher-remark"
+                      className="block text-xs font-bold text-slate-700 mb-1.5"
+                    >
+                      CLASS TEACHER'S REMARK
+                    </label>
+                    <select
+                      id="teacher-remark"
+                      data-testid="teacher-remark-select"
+                      value={teacherRemark}
+                      onChange={(e) => {
+                        setTeacherRemark(e.target.value);
+                        setTeacherRemarkError(
+                          e.target.value ? null : "Required"
+                        );
+                        logger.info("teacher_remark_changed", {
+                          value: e.target.value,
+                        });
+                      }}
+                      className="w-full text-xs border-b border-slate-300 rounded-none p-2 bg-transparent focus:outline-none focus:border-blue-500"
+                      aria-label="Teacher remark"
+                      required
+                    >
+                      <option value="" title="Required">
+                        Select a remark
+                      </option>
+                      {teacherRemarkOptions.map((opt) => (
+                        <option key={opt} value={opt} title={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                    {/* Extended underscores for writing space */}
+                    <div className="border-b border-slate-200 h-8 w-full"></div>
+                    <div className="border-b border-slate-200 h-8 w-full"></div>
+                    <div className="border-b border-slate-200 h-8 w-full"></div>
+
+                    {teacherRemark === "Other" && (
+                      <input
+                        id="teacher-remark-other-report"
+                        value={teacherRemarkOther}
+                        onChange={(e) => setTeacherRemarkOther(e.target.value)}
+                        className="w-full text-xs border-b border-slate-300 rounded-none p-2 mt-2 bg-transparent focus:outline-none focus:border-blue-500"
+                        aria-label="Custom teacher remark"
+                        placeholder="Specify other remark"
+                      />
+                    )}
+                    {teacherRemarkError && (
+                      <p className="text-xs text-red-600 mt-1">
+                        {teacherRemarkError}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Class Teacher Signature */}
+                <div className="pt-4 mt-auto">
+                  <div className="h-16 mb-2"></div>
+                  <div className="border-t border-slate-300 pt-2 text-center">
+                    <p className="font-bold text-xs text-slate-800">
+                      Class Teacher's Signature
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-1 italic invisible">
+                      Generated by E-SBA [JHS]
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="border-t border-slate-400 pt-2 text-center">
-                <p className="font-bold">Head Teacher's Signature</p>
+
+              {/* Column 3: Head Teacher */}
+              <div className="flex flex-col space-y-4">
+                <div className="font-bold text-slate-700 text-sm uppercase tracking-wider border-b-2 border-slate-100 pb-2">
+                  Head Teacher
+                </div>
+
+                <div className="space-y-6 flex-1">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-2">
+                      HEADMASTER'S REMARKS
+                    </label>
+                    <div className="space-y-4">
+                      <div className="w-full border-b border-slate-300 border-dashed h-6"></div>
+                      <div className="w-full border-b border-slate-300 border-dashed h-6"></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Head Teacher Signature */}
+                <div className="pt-4 mt-auto">
+                  <div className="h-16 mb-2 flex items-end justify-center">
+                    {schoolConfig.signatureEnabled &&
+                    schoolConfig.headSignatureUrl ? (
+                      <img
+                        src={schoolConfig.headSignatureUrl}
+                        alt="Signature"
+                        className="max-h-16 object-contain"
+                      />
+                    ) : (
+                      <div className="h-12 w-full"></div>
+                    )}
+                  </div>
+                  <div className="border-t border-slate-300 pt-2 text-center">
+                    <p className="font-bold text-xs text-slate-800">
+                      Head Teacher's Signature
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-1 italic">
+                      Generated by E-SBA [JHS]
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

@@ -732,7 +732,7 @@ app.get(
 
 const port = Number(process.env.PORT || 3001);
 // Fallback to index.html for client-side routing
-app.get("*", (_req: Request, res: Response) => {
+app.get(/.*/, (_req: Request, res: Response) => {
   try {
     res.sendFile(path.join(process.cwd(), "dist", "index.html"));
   } catch {
