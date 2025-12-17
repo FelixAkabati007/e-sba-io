@@ -1,126 +1,215 @@
-# E-SBA [JHS]
+# E-SBA (Electronic School Based Assessment)
 
-E-SBA is a lightweight web application for managing Junior High School assessment workflows: master student database, subject assessment sheets, and printable report cards.
+E-SBA is a comprehensive assessment management system designed for Junior High Schools. This repository contains the full source code for the React frontend and Express/Node.js backend.
 
-## Changelog
+## 1. Configuration Overview
 
-- 2025-12-08: Disabled client-side "Download Template" functionality across assessment sheets. The button remains visible for UI consistency but will no longer initiate any downloads or network requests. This change preserves all other assessment features and was implemented to enforce a site-wide policy and avoid generating Excel files that some clients (Excel 2016) reject due to strict OOXML merge validation. See `server/services/templates.ts` for validation fixes.
+The application is configured using a combination of **Environment Variables** (for server-side credentials and infrastructure) and **Runtime Configuration** (for school-specific settings stored in the browser).
 
-# E-SBA [JHS]
+### Environment Variables
 
-E-SBA is a lightweight web application for managing Junior High School assessment workflows: master student database, subject assessment sheets, and printable report cards.
+Create a `.env` file in the project root. The application supports `.env`, `.env.development`, and `.env.local`.
 
-## Setup
+#### Core Server
 
-- Install Node.js 18+.
-- Install dependencies: `npm install`.
-- Start dev server: `npm run dev` and open `http://localhost:5173/`.
+| Variable       | Default | Description                                                      |
+| -------------- | ------- | ---------------------------------------------------------------- |
+| `PORT`         | `3001`  | Port for the backend API server.                                 |
+| `SCAN_ENABLED` | `0`     | Set to `1` to enable specific scanning features (if applicable). |
+| `SCHOOL_NAME`  | `E-SBA` | Default school name used in generated Excel templates.           |
 
-## Build & Deploy
+#### Database (MySQL)
 
-- Production build: `npm run build`.
-- Preview locally: `npm run preview`.
-- Deploy the `dist/` folder to any static host (Netlify, Vercel, GitHub Pages, Nginx).
+The application connects to a MySQL database for the master record storage.
 
-## System Requirements
+| Variable  | Default         | Description                                                  |
+| --------- | --------------- | ------------------------------------------------------------ |
+| `DB_HOST` | `localhost`     | Database hostname. Aliases: `MYSQL_HOST`, `DATABASE_HOST`.   |
+| `DB_USER` | `esba_app_user` | Database username. Aliases: `MYSQL_USER`, `DATABASE_USER`.   |
+| `DB_PASS` | `""` (Empty)    | Database password. Aliases: `DB_PASSWORD`, `MYSQL_PASSWORD`. |
+| `DB_NAME` | `esba_jhs_db`   | Database name. Aliases: `MYSQL_DATABASE`, `DATABASE_NAME`.   |
 
-- Operating system: Windows 10 (64-bit) or later, including Windows 11
-- CPU: Dual-core 2.0 GHz or higher
-- RAM: 4 GB minimum (8 GB recommended)
-- Disk space: 500 MB free (includes installer, app, and data cache)
-- Display: 1280×720 minimum resolution
-- Network: Local access to `http://localhost` permitted by Windows Firewall
+#### Security & Tokens
 
-### Dependencies (Windows)
+These tokens secure sensitive API endpoints.
 
-- Packaged installer: No additional runtimes required
-- From source:
-  - `Node.js` 18 or later
-  - Optional developer tools if building native addons: `Microsoft Build Tools` and `Windows SDK`
-  - No `.NET Framework` or `Visual C++ Redistributable` required at runtime
+| Variable         | Required | Description                                              |
+| ---------------- | -------- | -------------------------------------------------------- |
+| `UPLOAD_TOKEN`   | **Yes**  | Required header token for uploading files to the server. |
+| `DOWNLOAD_TOKEN` | **Yes**  | Required header token for downloading secure content.    |
 
-## Installation
+#### Cloud Storage (Vercel Blob)
 
-- GUI (MSI):
-  - Double-click `E-SBA.msi`
-  - Follow the wizard to select install location (default: `C:\Program Files\E-SBA`)
-  - Finish to install Start Menu shortcuts and the local server
-  - Silent install (no UI): `msiexec /i E-SBA.msi /qn /norestart INSTALLDIR="C:\Program Files\E-SBA"`
-- GUI (EXE):
-  - Double-click `E-SBA-Setup.exe`
-  - Follow the wizard to install
-  - Silent install (no UI): `E-SBA-Setup.exe /S /D=C:\Program Files\E-SBA`
-- Command-line (from source):
-  - Install dependencies: `npm install`
-  - Build client: `npm run build`
-  - Start server: `npm run server:start`
-  - Open `http://localhost:3001` in a browser
+Used for storing larger binary assets if configured.
 
-### Administrator Privileges
+| Variable                | Required | Description                                                   |
+| ----------------------- | -------- | ------------------------------------------------------------- |
+| `BLOB_READ_WRITE_TOKEN` | Optional | Token for Vercel Blob storage. Alias: `VERCEL_BLOB_RW_TOKEN`. |
 
-- Installing to `C:\Program Files\` requires administrator privileges
-- Silent installations with `msiexec /qn` should be run from an elevated prompt
-- The application listens on `localhost` by default and does not require inbound firewall rules
+#### Supabase (PostgreSQL)
 
-### Known Compatibility Issues
+Optional integration for alternative storage or specific features.
 
-- SmartScreen: Windows may warn about unrecognized publisher; choose “Run anyway”
-- Excel 2016 strict OOXML: Older Excel builds may reject certain workbooks; use the generated CSV alternative or update Excel
-- Antivirus: Some AV products may block local file generation; allow the app’s executable and `C:\Program Files\E-SBA\` folder
+| Variable                    | Required | Description                                                     |
+| --------------------------- | -------- | --------------------------------------------------------------- |
+| `SUPABASE_URL`              | Optional | URL for the Supabase instance.                                  |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional | Service role key for admin access.                              |
+| `SUPABASE_PG_CONN`          | Optional | Connection string for Supabase Postgres. Alias: `POSTGRES_URL`. |
 
-## Installation Verification
+---
 
-- After install:
-  - Start “E-SBA” from the Start Menu, or run `E-SBA.exe`
-  - Verify the server is running: open `http://localhost:3001`
-  - Check health endpoints:
-    - `http://localhost:3001/api/db/health` returns `{ ok: true }` when DB is configured
-    - `http://localhost:3001/api/supabase/health` returns `{ ok: true }` when Supabase is configured
-  - Confirm UI loads and subject assessment sheets render
-  - Generate an Excel export from a subject sheet to confirm file I/O works
+## 2. Setup Instructions
 
-## Testing
+### Prerequisites
 
-- Typecheck: `npm run typecheck`.
-- Unit/integration tests: `npm test`.
-- E2E tests: start dev server (`npm run dev`) and run `npm run e2e` in another terminal.
+- **Node.js**: v18.0.0 or higher.
+- **MySQL**: v8.0 or higher (or MariaDB equivalent).
+- **Package Manager**: `npm` (included with Node.js).
 
-## CI/CD
+### Step-by-Step Configuration
 
-GitHub Actions workflow runs typecheck, tests, and build on pushes/PRs to `main`.
+1.  **Clone the Repository**
 
-## API
+    ```bash
+    git clone <repository-url>
+    cd e-SBA
+    ```
 
-The app is currently client-side only and does not expose an API. Import/Export uses local files and generates Excel/PDF on the client.
+2.  **Install Dependencies**
 
-### Blob Storage (Vercel)
+    ```bash
+    npm install
+    ```
 
-- Endpoint: `POST /api/blob/put`
-  - Query/body:
-    - `path`: path like `articles/blob.txt`
-    - `access`: `public` | `private` (default `public`)
-    - `file` (multipart) or `content` (string)
-  - Env: `BLOB_READ_WRITE_TOKEN` (or `VERCEL_BLOB_RW_TOKEN`)
-  - Response: `{ ok: true, url }`
+3.  **Environment Setup**
+    Create a `.env` file in the root directory and configure your database credentials and security tokens.
 
-## Security
+    > **Security Note:** Never commit your `.env` file to version control.
 
-- Validates image types and sizes for logo upload.
-- Restricts Excel upload to `.xlsx`/`.xls` and handles parse errors gracefully.
-- No secrets stored or transmitted; all processing occurs in the browser.
+    ```env
+    PORT=3001
 
-## Database Cleanup
+    # Database Configuration
+    DB_HOST=localhost
+    DB_USER=your_db_username      # Replace with your local DB user
+    DB_PASS=your_db_password      # Replace with your local DB password
+    DB_NAME=esba_jhs_db
 
-- To purge all student-related seed/test data while preserving schema:
-  - Backup and clean: `npm run db:clean`
-    - Creates JSON backups under `server/backups/` for `students`, `assessments`, `academic_sessions`, `audit_logs`
-    - Runs transactional deletes and verifies zero counts
-    - Resets auto-increment for `assessments`, `audit_logs`, `academic_sessions`
-  - Quick reset (non-transactional): `npm run db:reset`
-    - Executes SQL truncation and auto-increment reset
-  - Configure DB connection via env vars `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` (defaults in `server/lib/db.ts`)
+    # Security Tokens (Generate strong random strings)
+    UPLOAD_TOKEN=your_secure_upload_token_here
+    DOWNLOAD_TOKEN=your_secure_download_token_here
+    ```
 
-## Notes
+4.  **Database Initialization**
+    Initialize the local MySQL database with the schema:
 
-- Excel/PDF generation uses `xlsx` and `jspdf` with `jspdf-autotable`.
-- Tailwind CSS powers the UI styling.
+    ```bash
+    # Resets the database and applies the schema (WARNING: Deletes existing data)
+    npm run db:reset
+    ```
+
+    Alternatively, use `npm run db:clean` to clear data without dropping tables.
+
+5.  **Start the Application**
+
+    - **Development Mode** (Hot-reload enabled for both frontend and backend):
+
+      ```bash
+      # Terminal 1: Frontend (Vite)
+      npm run dev
+
+      # Terminal 2: Backend (Express)
+      npm run server:dev
+      ```
+
+    - **Production Build**:
+      ```bash
+      npm run build        # Build frontend
+      npm run server:build # Build backend
+      npm run server:start # Start production server
+      ```
+
+---
+
+## 3. Runtime Configuration
+
+Unlike infrastructure settings, **School Configuration** is managed directly within the application UI and persists in the browser's local storage (IndexedDB).
+
+### Dynamic Options
+
+Navigate to the **Settings** or **Profile** section in the application to configure:
+
+- **School Details**: Name, Motto, Address, Head Teacher's name.
+- **Assessment Weights**: Class Assessment (Default: 50%) vs. Exam Weight (Default: 50%).
+- **Assets**: School Logo and Head Teacher's Signature.
+- **Grading System**: Define grade ranges (e.g., 80-100 = Grade 1) and remarks.
+
+### Hot-Reload Capabilities
+
+- **Frontend**: Vite provides Hot Module Replacement (HMR). Changes to React components (`src/`) reflect instantly without a full page reload.
+- **Backend**: `tsx` watches for file changes in `server/` and automatically restarts the API server during development.
+
+### Validation
+
+- **Templates**: Generated Excel templates utilize data validation to restrict input types (e.g., numeric scores).
+- **Parsing**: The system validates uploaded assessment sheets against the expected schema (Student ID, columns for Task 1-4, etc.).
+
+---
+
+## 4. Security Considerations
+
+### Sensitive Parameters
+
+- **Tokens**: `UPLOAD_TOKEN` and `DOWNLOAD_TOKEN` effectively act as API keys. **Do not** share these or commit them to version control.
+- **Database Credentials**: Ensure `DB_PASS` is strong and the database user has only necessary privileges.
+
+### Recommended Practices
+
+1.  **GitIgnore**: Ensure `.env` and `*.local` files are listed in `.gitignore` to prevent accidental commits.
+2.  **Token Rotation**: Periodically rotate `UPLOAD_TOKEN` and `DOWNLOAD_TOKEN` in production environments.
+3.  **Encryption**: The application includes utilities (`lib/storage.ts`) that support encrypted storage for local data using `crypto.subtle`. When implementing new storage features, enable the `encrypt` flag for sensitive user data.
+
+### Troubleshooting
+
+- **Database Connection Failed**: Verify `DB_HOST` and credentials in `.env`. Ensure the MySQL service is running.
+- **Uploads Failing**: Check that the client requests include the `x-upload-token` header matching the `UPLOAD_TOKEN` env var.
+- **Version Mismatch**: If you encounter errors related to `Task1-4` vs `cat1-4`, ensure you are using the latest Excel templates generated by the system, as column mappings have been updated.
+
+---
+
+## 5. Version History
+
+- **v1.0.0** (Current): Initial release with comprehensive assessment management, Excel template generation, and student reporting features.
+
+---
+
+## 6. Contribution Guidelines
+
+We welcome contributions to the E-SBA project!
+
+1.  **Fork the Repository**: Create your own copy of the project.
+2.  **Create a Branch**: Use a descriptive name (e.g., `feature/new-grading-system` or `fix/upload-bug`).
+3.  **Commit Changes**: Ensure your code is clean and well-documented. Sanitize any personal data or secrets from your commits.
+4.  **Push to Branch**: Upload your changes to your fork.
+5.  **Submit a Pull Request**: Describe your changes and reference any related issues.
+
+Please ensure all tests pass (`npm test`) before submitting.
+
+---
+
+## 7. Author & Contact
+
+**Mr. Felix Akabati**  
+Email: [felixakabati007@gmail.com](mailto:felixakabati007@gmail.com)
+
+---
+
+## 8. License & Copyright
+
+**Copyright © 2023 E-SBA. All Rights Reserved.**
+
+This project is licensed under the **MIT License**.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
