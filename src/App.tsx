@@ -93,18 +93,6 @@ interface GradeConfig {
   desc: string;
 }
 
-interface SchoolConfig {
-  name: string;
-  motto: string;
-  headTeacher: string;
-  address: string;
-  catWeight: number;
-  examWeight: number;
-  logoUrl: string | null;
-  signatureEnabled?: boolean;
-  headSignatureUrl?: string | null;
-}
-
 interface ImportLog {
   status: "success" | "error" | "warning";
   message: string;
@@ -1237,7 +1225,7 @@ export default function App() {
             styles: { fontSize: 10, valign: "middle", halign: "center" },
             columnStyles: { 0: { halign: "left" }, 6: { halign: "left" } },
           });
-          let y =
+          const y =
             (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable
               .finalY + 10;
           const baseY = y;
@@ -1306,7 +1294,7 @@ export default function App() {
           const lineLength = (colWidth - outOfWidth - 2) / 2;
 
           doc.setLineWidth(0.1);
-          doc.setLineDash([], 0);
+          (doc as any).setLineDash([], 0);
 
           // Field 1
           doc.line(col2X, y2, col2X + lineLength, y2);
@@ -1395,11 +1383,15 @@ export default function App() {
 
           doc.text("HEADMASTER'S REMARKS", col3X, y3);
           y3 += 4;
-          doc.setLineDash([1, 1], 0);
+          (
+            doc as jsPDF & {
+              setLineDash: (dash: number[], offset: number) => void;
+            }
+          ).setLineDash([1, 1], 0);
           doc.line(col3X, y3, col3X + colWidth, y3);
           y3 += 5;
           doc.line(col3X, y3, col3X + colWidth, y3);
-          doc.setLineDash([], 0);
+          (doc as any).setLineDash([], 0);
           y3 += 4;
 
           // --- Signatures (Aligned at bottom) ---
@@ -3142,7 +3134,7 @@ export default function App() {
                 talentRemarkError ? "border-red-500" : "border-slate-300"
               }`}
               aria-label="Talent and interest remark"
-              aria-invalid={Boolean(talentRemarkError)}
+              aria-invalid={!!talentRemarkError}
               aria-errormessage="talent-remark-error"
               onInvalid={() => setTalentRemarkError("Required")}
               required
@@ -3504,7 +3496,7 @@ export default function App() {
                         talentRemarkError ? "border-red-500" : ""
                       }`}
                       aria-label="Talent and interest remark"
-                      aria-invalid={talentRemarkError ? "true" : "false"}
+                      aria-invalid={!!talentRemarkError}
                       aria-errormessage="talent-remark-error-report"
                       onInvalid={() => setTalentRemarkError("Required")}
                       required
