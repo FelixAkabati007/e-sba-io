@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { apiClient } from "../lib/apiClient";
 import { Lock, User, Loader2, AlertCircle } from "lucide-react";
 
 const Login: React.FC = () => {
@@ -15,24 +16,19 @@ const Login: React.FC = () => {
     setError(null);
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await res.text();
-        console.error("Non-JSON response:", text);
-        throw new Error(`Server error: ${res.status} ${res.statusText}`);
-      }
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Login failed");
-      }
+      const data = await apiClient.request<{
+        token: string;
+        user: {
+          id: string;
+          username: string;
+          fullName: string;
+          role: string;
+          assignedClassId: number | null;
+          assignedClassName: string | null;
+          assignedSubjectId: number | null;
+          assignedSubjectName: string | null;
+        };
+      }>("/auth/login", "POST", { username, password });
 
       login(data.token, data.user);
     } catch (err) {
