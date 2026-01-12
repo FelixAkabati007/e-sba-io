@@ -53,6 +53,7 @@ import SignatureUpload from "./components/SignatureUpload";
 import { SystemConfigStorage, type SchoolConfig } from "./lib/configStorage";
 import { buildImportedStudents } from "./lib/masterdbImport";
 import ProgressBar from "./components/ProgressBar";
+import SignOutButton from "./components/SignOutButton";
 
 const MasterDBSyncControls: React.FC = () => null;
 
@@ -5329,7 +5330,12 @@ export default function App() {
           <Menu size={24} className="opacity-80" />
           <h1 className="text-xl font-bold tracking-wide">E-SBA [JHS]</h1>
         </div>
-        <div className="text-xs text-slate-400">v2.5.0 | Excel-Mode</div>
+        <div className="flex items-center gap-4">
+          <div className="text-xs text-slate-400 hidden md:block">
+            v2.5.0 | Excel-Mode
+          </div>
+          <SignOutButton onLogout={logout} />
+        </div>
       </div>
       <main className="p-4 pb-16">
         {currentView === "home" && renderHome()}
