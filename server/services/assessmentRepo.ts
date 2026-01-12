@@ -2,7 +2,6 @@ import fs from "fs";
 import path from "path";
 import { put } from "@vercel/blob";
 import { EventEmitter } from "events";
-import { supabaseAdmin } from "../lib/supabase";
 
 // roles are validated at the router level
 type ChangeType = "upsert" | "delete";
@@ -292,17 +291,20 @@ export async function backupIndex(): Promise<{
   return { ok: true, path: p };
 }
 
+import { pool } from "../lib/db";
+
 export async function audit(event: string, detail?: unknown): Promise<void> {
   try {
-    if (supabaseAdmin) {
-      await supabaseAdmin.from("audit_logs").insert({ event, detail });
-    } else {
-      const p = path.join(baseDir, "audit_events.log");
-      const line =
-        JSON.stringify({ at: new Date().toISOString(), event, detail }) + "\n";
-      fs.appendFileSync(p, line);
+    const client = await pool.connect();
+    try {
+      await client.query(
+        "INSERT INTO audit_logs (action_type, table_name, record_id, details, timestamp) VALUES ($1, $2, $3, $4, NOW())",
+        ["INSERT", "SYSTEM", "0", JSON.stringify({ event, detail })]
+      );
+    } finally {
+      client.release();
     }
-  } catch {
-    // ignore audit failures
+  } catch (e) {
+    console.error("Audit failed:", e);
   }
 }

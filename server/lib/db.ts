@@ -1,8 +1,10 @@
 import dotenv from "dotenv";
 import fs from "fs";
 import path from "path";
-import mysql from "mysql2/promise";
+import pg from "pg";
 import { fileURLToPath } from "url";
+
+const { Pool } = pg;
 
 (() => {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -18,29 +20,31 @@ import { fileURLToPath } from "url";
   }
 })();
 
-export const pool = mysql.createPool({
-  host:
-    process.env.DB_HOST ||
-    process.env.MYSQL_HOST ||
-    process.env.DATABASE_HOST ||
-    "localhost",
-  user:
-    process.env.DB_USER ||
-    process.env.MYSQL_USER ||
-    process.env.DATABASE_USER ||
-    "esba_app_user",
-  password:
-    process.env.DB_PASS ||
-    process.env.DB_PASSWORD ||
-    process.env.MYSQL_PASSWORD ||
-    process.env.DATABASE_PASSWORD ||
-    "",
-  database:
-    process.env.DB_NAME ||
-    process.env.MYSQL_DATABASE ||
-    process.env.DATABASE_NAME ||
-    "esba_jhs_db",
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
+const connectionString =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.NEON_DATABASE_URL;
+
+if (!connectionString) {
+  console.warn("DATABASE_URL is not set. Database connection may fail.");
+}
+
+export const pool = new Pool({
+  connectionString,
+  ssl: {
+    rejectUnauthorized: false, // Required for Neon
+  },
+  max: 20, // Connection pool limit
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
+
+// Test connection
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error("Error acquiring client", err.stack);
+  } else {
+    console.log("Connected to Neon PostgreSQL database");
+    release();
+  }
 });

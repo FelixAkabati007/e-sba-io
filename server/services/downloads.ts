@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import EventEmitter from "events";
-import { Pool } from "mysql2/promise";
+import type { Pool as PgPool, PoolClient } from "pg";
 import { buildAssessmentTemplateXLSX, validateWorkbookXLSX } from "./templates";
 
 const uploadDir = path.join(process.cwd(), "uploads", "assessmentSheets");
@@ -44,7 +44,7 @@ function jobKey(params: {
 }
 
 export async function startAssessmentJob(
-  pool: Pool,
+  pool: PgPool,
   params: {
     subject: string;
     className: string;
@@ -88,7 +88,7 @@ export async function startAssessmentJob(
       emitter.emit("update", id);
 
       // Build workbook (this may be the heaviest step)
-      const conn = await pool.getConnection();
+      const conn: PoolClient = await pool.connect();
       try {
         job.progress = 40;
         job.updatedAt = Date.now();

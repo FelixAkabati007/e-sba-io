@@ -55,7 +55,7 @@ describe("ClientSync conflicts", () => {
         firstName: "Wins",
         gender: "Other",
         dob: "2000-01-01",
-        class: "JHS 1",
+        class: "JHS 1(A)",
         status: "Active",
         version: 2,
       })
@@ -74,7 +74,7 @@ describe("ClientSync conflicts", () => {
       firstName: "Edit",
       gender: "Other",
       dob: "2000-01-01",
-      class: "JHS 1",
+      class: "JHS 1(A)",
       status: "Active",
       version: 1,
     };
@@ -97,7 +97,7 @@ describe("ClientSync conflicts", () => {
         firstName: "Two",
         gender: "Other",
         dob: "2000-01-01",
-        class: "JHS 1",
+        class: "JHS 1(A)",
         status: "Active",
         version: 2,
       })

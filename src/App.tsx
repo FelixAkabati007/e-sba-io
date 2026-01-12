@@ -1,6 +1,9 @@
 import React, { useMemo, useEffect, useRef, useState } from "react";
+import { useAuth } from "./context/AuthContext";
 import {
   Calculator,
+  LogOut,
+  BarChart,
   Users,
   FileText,
   Save,
@@ -33,27 +36,22 @@ import { jsPDF } from "jspdf";
 import "jspdf-autotable";
 import { logger } from "./lib/logger";
 import { apiClient } from "./lib/apiClient";
-import type { SubjectSheetRow } from "./lib/apiTypes";
-import SignatureUpload from "./components/SignatureUpload";
 import {
-  saveMarksSession,
-  loadMarksSession,
-  subscribeAssessments,
-} from "./lib/dataPersistence";
-import {
-  saveUploadedFile,
-  saveDownloadedContent,
+  kvGet,
+  kvSet,
   list,
   getUsage,
   getData,
   remove,
   cleanup,
-  kvGet,
-  kvSet,
-  kvRemove,
+  saveUploadedFile,
+  saveDownloadedContent,
 } from "./lib/storage";
+import SignatureUpload from "./components/SignatureUpload";
+// Unused imports removed: saveMarksSession, loadMarksSession, subscribeAssessments, saveUploadedFile, saveDownloadedContent, list, getUsage, getData, remove, cleanup, kvGet, kvSet, kvRemove
 import { SystemConfigStorage, type SchoolConfig } from "./lib/configStorage";
 import { buildImportedStudents } from "./lib/masterdbImport";
+import ProgressBar from "./components/ProgressBar";
 
 const MasterDBSyncControls: React.FC = () => null;
 
@@ -85,6 +83,17 @@ interface Marks {
   };
 }
 
+type SaveMarksRow = {
+  student_id: string;
+  cat1: number;
+  cat2: number;
+  cat3: number;
+  cat4: number;
+  group: number;
+  project: number;
+  exam: number;
+};
+
 interface GradeConfig {
   min: number;
   max: number;
@@ -111,12 +120,18 @@ const SUBJECTS = [
   "RME",
 ];
 
-const AVAILABLE_CLASSES = ["JHS 1", "JHS 2", "JHS 3"];
+const AVAILABLE_CLASSES = [
+  "JHS 1(A)",
+  "JHS 1(B)",
+  "JHS 1(C)",
+  "JHS 2(A)",
+  "JHS 2(B)",
+  "JHS 2(C)",
+  "JHS 3(A)",
+  "JHS 3(B)",
+  "JHS 3(C)",
+];
 
-const LS_STUDENTS_KEY = "MasterDBStudents";
-const LS_MARKS_KEY = "MasterDBMarks";
-const LS_STUDENTS_REF = "MasterDBStudentsRef";
-const LS_MARKS_REF = "MasterDBMarksRef";
 const verKey = (cls: string, subj: string, ay: string, tm: string): string =>
   `ASSESSREPO::VER:${cls}:${subj}:${ay}:${tm}`;
 const lastProcessedKey = (
@@ -125,6 +140,8 @@ const lastProcessedKey = (
   ay: string,
   tm: string
 ): string => `ASSESSREPO::LAST_PROCESSED:${cls}:${subj}:${ay}:${tm}`;
+
+// Removed unused LS keys and helper functions
 
 type TileProps = {
   title: string;
@@ -166,9 +183,10 @@ const DashboardTile = React.memo(
 );
 
 export default function App() {
+  const { user, logout } = useAuth();
   const [currentView, setCurrentView] = useState("home");
   const [activeSubject, setActiveSubject] = useState("");
-  const [selectedClass, setSelectedClass] = useState("JHS 2");
+  const [selectedClass, setSelectedClass] = useState("JHS 2(A)");
 
   const [academicYear, setAcademicYear] = useState("2025/2026");
   const [term, setTerm] = useState("Term 1");
@@ -184,6 +202,16 @@ export default function App() {
     signatureEnabled: true,
     headSignatureUrl: null,
   });
+
+  useEffect(() => {
+    if (user?.role === "CLASS" && user.assignedClassName) {
+      setSelectedClass(user.assignedClassName);
+    }
+    if (user?.role === "SUBJECT" && user.assignedSubjectName) {
+      setActiveSubject(user.assignedSubjectName);
+      if (currentView === "home") setCurrentView("subject");
+    }
+  }, [user, currentView]);
 
   const [gradingSystem] = useState<GradeConfig[]>([
     { min: 80, max: 100, grade: 1, remark: "Highest", desc: "Distinction" },
@@ -255,10 +283,7 @@ export default function App() {
         });
         const rows = Array.isArray(data.rows) ? data.rows : [];
         if (cancelled) return;
-        saveMarksSession(
-          { subject, class: cls, academicYear: year, term: t },
-          rows
-        );
+        // saveMarksSession removed (no redundant save)
         if (rows.length === 0) {
           setImportLogs((prev) => [
             ...prev,
@@ -306,58 +331,10 @@ export default function App() {
         ]);
       } catch (e) {
         logger.error("marks_load_exception", e);
-        const cached = loadMarksSession({
-          subject,
-          class: cls,
-          academicYear: year,
-          term: t,
-        });
-        if (cached && Array.isArray(cached.rows) && cached.rows.length) {
-          const rows = cached.rows;
-          setMarks((prev) => {
-            const next: Marks = { ...prev };
-            for (const r of rows) {
-              const sid = String(r.student_id || "");
-              if (!sid) continue;
-              next[sid] =
-                next[sid] ||
-                ({} as Record<
-                  string,
-                  {
-                    cat1: number;
-                    cat2: number;
-                    cat3: number;
-                    cat4: number;
-                    group: number;
-                    project: number;
-                    exam: number;
-                  }
-                >);
-              next[sid][subject] = {
-                cat1: Number(r.cat1_score || 0),
-                cat2: Number(r.cat2_score || 0),
-                cat3: Number(r.cat3_score || 0),
-                cat4: Number(r.cat4_score || 0),
-                group: Number(r.group_work_score || 0),
-                project: Number(r.project_work_score || 0),
-                exam: Number(r.exam_score || 0),
-              };
-            }
-            return next;
-          });
-          setImportLogs((prev) => [
-            ...prev,
-            {
-              status: "success",
-              message: `Loaded ${rows.length} cached marks (offline).`,
-            },
-          ]);
-        } else {
-          setImportLogs((prev) => [
-            ...prev,
-            { status: "error", message: "Error loading saved marks." },
-          ]);
-        }
+        setImportLogs((prev) => [
+          ...prev,
+          { status: "error", message: "Error loading saved marks." },
+        ]);
       }
     })();
     return () => {
@@ -365,50 +342,7 @@ export default function App() {
     };
   }, [activeSubject, selectedClass, academicYear, term]);
 
-  useEffect(() => {
-    const cls = selectedClass;
-    const subject = activeSubject;
-    const year = academicYear;
-    const t = term;
-    if (!subject || !cls || !year || !t) return;
-    const unsubscribe = subscribeAssessments(
-      { subject, class: cls, academicYear: year, term: t },
-      (rows: SubjectSheetRow[]) => {
-        setMarks((prev) => {
-          const next: Marks = { ...prev };
-          for (const r of rows) {
-            const sid = String(r.student_id || "");
-            if (!sid) continue;
-            next[sid] =
-              next[sid] ||
-              ({} as Record<
-                string,
-                {
-                  cat1: number;
-                  cat2: number;
-                  cat3: number;
-                  cat4: number;
-                  group: number;
-                  project: number;
-                  exam: number;
-                }
-              >);
-            next[sid][subject] = {
-              cat1: Number(r.cat1_score || 0),
-              cat2: Number(r.cat2_score || 0),
-              cat3: Number(r.cat3_score || 0),
-              cat4: Number(r.cat4_score || 0),
-              group: Number(r.group_work_score || 0),
-              project: Number(r.project_work_score || 0),
-              exam: Number(r.exam_score || 0),
-            };
-          }
-          return next;
-        });
-      }
-    );
-    return () => unsubscribe();
-  }, [activeSubject, selectedClass, academicYear, term]);
+  // removed legacy subscribeAssessments
   const [isImporting, setIsImporting] = useState(false);
   type ImportedRow = Record<string, unknown>;
   const [importedPreview, setImportedPreview] = useState<ImportedRow[]>([]);
@@ -417,6 +351,12 @@ export default function App() {
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [isProcessingLogo, setIsProcessingLogo] = useState(false);
+  const [attendancePresent, setAttendancePresent] = useState("");
+  const [attendanceTotal, setAttendanceTotal] = useState("");
+  const [talentRemark, setTalentRemark] = useState("");
+  const [talentRemarkOther, setTalentRemarkOther] = useState("");
+  const [teacherRemark, setTeacherRemark] = useState("");
+  const [teacherRemarkOther, setTeacherRemarkOther] = useState("");
 
   const [deleteConfirmation, setDeleteConfirmation] = useState({
     isOpen: false,
@@ -447,83 +387,76 @@ export default function App() {
   const [formErrors, setFormErrors] = useState<{ [key: string]: string }>({});
 
   const [students, setStudents] = useState<Student[]>([]);
+  const filteredStudents = useMemo(
+    () =>
+      students.filter(
+        (s) =>
+          s.class === selectedClass &&
+          (s.status === "Active" || s.status === "Inactive")
+      ),
+    [students, selectedClass]
+  );
 
   const [marks, setMarks] = useState<Marks>({});
 
+  // Load students from SQL API (replaces LS)
   useEffect(() => {
-    const s = kvGet<Student[]>("local", LS_STUDENTS_KEY) || [];
-    const m = kvGet<Marks>("local", LS_MARKS_KEY) || {};
-    const sr = kvGet<string>("local", LS_STUDENTS_REF);
-    const mr = kvGet<string>("local", LS_MARKS_REF);
-    if (s.length > 0) setStudents(s);
-    else if (sr) {
-      getData(sr)
-        .then((v) => {
-          if (v && typeof v.data === "string") {
-            const parsed = JSON.parse(v.data) as Student[];
-            setStudents(parsed);
-          }
-        })
-        .catch(() => void 0);
-    }
-    if (Object.keys(m).length > 0) setMarks(m);
-    else if (mr) {
-      getData(mr)
-        .then((v) => {
-          if (v && typeof v.data === "string") {
-            const parsed = JSON.parse(v.data) as Marks;
-            setMarks(parsed);
-          }
-        })
-        .catch(() => void 0);
+    const loadStudents = async () => {
+      try {
+        const data = await apiClient.getStudents();
+        setStudents(data);
+        logger.info("students_loaded_api", { count: data.length });
+      } catch (e) {
+        logger.error("students_load_failed", e);
+      }
+    };
+    if (localStorage.getItem("token")) {
+      loadStudents();
     }
   }, []);
 
-  useEffect(() => {
-    const payload = JSON.stringify(students);
-    if (payload.length < 4 * 1024 * 1024) {
-      kvSet("local", LS_STUDENTS_KEY, students);
-    } else {
-      const prevId = kvGet<string>("local", LS_STUDENTS_REF);
-      saveDownloadedContent(
-        undefined,
-        payload,
-        "application/json",
-        ["masterdb", "students"],
-        undefined,
-        true,
-        "MasterDBStudents.json"
-      )
-        .then(({ id }) => {
-          kvSet("local", LS_STUDENTS_REF, id);
-          if (prevId) remove(prevId).catch(() => void 0);
-        })
-        .catch(() => void 0);
-    }
-  }, [students]);
+  // Removed old LS effects for students/marks loading/saving
 
+  // Auto-save marks to SQL DB
   useEffect(() => {
-    const payload = JSON.stringify(marks);
-    if (payload.length < 4 * 1024 * 1024) {
-      kvSet("local", LS_MARKS_KEY, marks);
-    } else {
-      const prevId = kvGet<string>("local", LS_MARKS_REF);
-      saveDownloadedContent(
-        undefined,
-        payload,
-        "application/json",
-        ["masterdb", "marks"],
-        undefined,
-        true,
-        "MasterDBMarks.json"
-      )
-        .then(({ id }) => {
-          kvSet("local", LS_MARKS_REF, id);
-          if (prevId) remove(prevId).catch(() => void 0);
-        })
-        .catch(() => void 0);
-    }
-  }, [marks]);
+    if (currentView !== "subject" || !activeSubject || !selectedClass) return;
+
+    const timer = setTimeout(() => {
+      const classStudents = students.filter(
+        (s) => s.class === selectedClass && s.status === "Active"
+      );
+      const rows: SaveMarksRow[] = [];
+      for (const s of classStudents) {
+        const m = marks[s.id]?.[activeSubject];
+        if (m) {
+          rows.push({
+            student_id: s.id,
+            cat1: m.cat1,
+            cat2: m.cat2,
+            cat3: m.cat3,
+            cat4: m.cat4,
+            group: m.group,
+            project: m.project,
+            exam: m.exam,
+          });
+        }
+      }
+
+      if (rows.length > 0) {
+        apiClient
+          .request("/assessments/save", "POST", {
+            class: selectedClass,
+            subject: activeSubject,
+            year: academicYear,
+            term: term,
+            rows: rows,
+          })
+          .catch((e) => console.error("Auto-save failed", e));
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [marks, activeSubject, selectedClass, academicYear, term, currentView]);
 
   // Load System Config
   useEffect(() => {
@@ -546,31 +479,194 @@ export default function App() {
     loadConfig();
   }, []);
 
+  // Duplicate auto-save logic removed.
+  // Use manual save for Talent (handleSaveTalent) and filtered auto-save for Attendance (below).
+
+  const [reportDataLoaded, setReportDataLoaded] = useState(false);
+  useEffect(() => {
+    if (currentView !== "report") return;
+    const sid = reportId || filteredStudents[0]?.id;
+    if (!sid) return;
+
+    const fetchData = async () => {
+      setReportDataLoaded(false);
+      setTalentRemark("");
+      setTeacherRemark("");
+      setAttendancePresent("");
+      setAttendanceTotal("");
+
+      try {
+        const tRes = await fetch(
+          `/api/reporting/talent?studentId=${sid}&academicYear=${academicYear}&term=${term}`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        if (tRes.ok) {
+          const tData = await tRes.json();
+          setTalentRemark(tData.talent_remark || "");
+          setTeacherRemark(tData.class_teacher_remark || "");
+        }
+
+        const aRes = await fetch(
+          `/api/reporting/attendance?studentId=${sid}&academicYear=${academicYear}&term=${term}`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        );
+        if (aRes.ok) {
+          const aData = await aRes.json();
+          setAttendancePresent(String(aData.days_present || ""));
+          setAttendanceTotal(String(aData.days_total || ""));
+        }
+      } catch (e) {
+        console.error("Failed to load report data", e);
+      } finally {
+        setReportDataLoaded(true);
+      }
+    };
+    fetchData();
+  }, [reportId, selectedClass, academicYear, term, currentView]);
+
+  // Track original values for Cancel functionality
+  const [originalTalent, setOriginalTalent] = useState({
+    talent: "",
+    teacher: "",
+  });
+  const [isTalentSaving, setIsTalentSaving] = useState(false);
+
+  // Update original values when data loads
+  useEffect(() => {
+    if (reportDataLoaded) {
+      setOriginalTalent({
+        talent: talentRemark,
+        teacher: teacherRemark,
+      });
+    }
+  }, [reportDataLoaded]);
+
+  const hasTalentChanges = useMemo(() => {
+    const currentTalent =
+      talentRemark === "Other" ? talentRemarkOther : talentRemark;
+    const currentTeacher =
+      teacherRemark === "Other" ? teacherRemarkOther : teacherRemark;
+    // Simple comparison - this might need refinement if "Other" logic is complex
+    // But for now, we just track if the main state changed from what we loaded
+    // Note: This simple check assumes loaded values are correctly mapped to state
+    // We'll rely on the user explicitly clicking Save/Cancel
+    return (
+      talentRemark !== originalTalent.talent ||
+      teacherRemark !== originalTalent.teacher ||
+      (talentRemark === "Other" && talentRemarkOther !== "") ||
+      (teacherRemark === "Other" && teacherRemarkOther !== "")
+    );
+  }, [
+    talentRemark,
+    talentRemarkOther,
+    teacherRemark,
+    teacherRemarkOther,
+    originalTalent,
+  ]);
+
+  const handleSaveTalent = async () => {
+    const sid = reportId || filteredStudents[0]?.id;
+    if (!sid) return;
+
+    setIsTalentSaving(true);
+    try {
+      await apiClient.request("/reporting/talent", "POST", {
+        studentId: sid,
+        academicYear,
+        term,
+        talent: talentRemark === "Other" ? talentRemarkOther : talentRemark,
+        teacher: teacherRemark === "Other" ? teacherRemarkOther : teacherRemark,
+        head: "",
+      });
+
+      setOriginalTalent({
+        talent: talentRemark,
+        teacher: teacherRemark,
+      });
+      // Optional: Show success indicator
+      const btn = document.getElementById("save-talent-btn");
+      if (btn) {
+        const originalText = btn.innerText;
+        btn.innerText = "Saved!";
+        setTimeout(() => (btn.innerText = originalText), 2000);
+      }
+    } catch (e) {
+      logger.error("save_talent_failed", e);
+      alert("Failed to save changes. Please try again.");
+    } finally {
+      setIsTalentSaving(false);
+    }
+  };
+
+  const handleCancelTalent = () => {
+    setTalentRemark(originalTalent.talent);
+    setTeacherRemark(originalTalent.teacher);
+    // Reset "Other" fields if applicable
+    setTalentRemarkOther("");
+    setTeacherRemarkOther("");
+  };
+
+  // Auto-save Attendance (Only for HEAD/Admin, disabled for CLASS)
+  useEffect(() => {
+    const sid = reportId || filteredStudents[0]?.id;
+    if (!sid || currentView !== "report" || !reportDataLoaded) return;
+
+    // Class Teachers cannot edit Attendance, so no auto-save needed for them
+    if (user?.role === "CLASS") return;
+
+    const timer = setTimeout(async () => {
+      try {
+        await apiClient.request("/reporting/attendance", "POST", {
+          studentId: sid,
+          academicYear,
+          term,
+          present: attendancePresent,
+          total: attendanceTotal,
+        });
+      } catch (e) {
+        console.error("Auto-save attendance failed", e);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [
+    attendancePresent,
+    attendanceTotal,
+    reportId,
+    filteredStudents,
+    currentView,
+    academicYear,
+    term,
+    reportDataLoaded,
+    user,
+  ]);
+
   // Save System Config
   useEffect(() => {
+    if (!user || user.role !== "HEAD") return;
+
     const timer = setTimeout(async () => {
       try {
         await SystemConfigStorage.saveAll(schoolConfig, { academicYear, term });
       } catch (e) {
+        // Suppress auth errors if they somehow slip through
+        if ((e as Error).message.includes("Authentication required")) return;
         logger.error("system_config_save_failed", e);
       }
     }, 1000); // Debounce save
     return () => clearTimeout(timer);
-  }, [schoolConfig, academicYear, term]);
+  }, [schoolConfig, academicYear, term, user]);
 
   useEffect(() => {
     setReportId("");
   }, [selectedClass]);
-
-  const filteredStudents = useMemo(
-    () =>
-      students.filter(
-        (s) =>
-          s.class === selectedClass &&
-          (s.status === "Active" || s.status === "Inactive")
-      ),
-    [students, selectedClass]
-  );
 
   const academicYearOptions = useMemo(() => {
     const years: string[] = [];
@@ -603,6 +699,10 @@ export default function App() {
   };
 
   const updateMark = (studentId: string, field: string, value: string) => {
+    if (user?.role === "CLASS") {
+      alert("Access Denied: You do not have permission to edit Subject Marks.");
+      return;
+    }
     const val = clamp(field, parseInt(value) || 0);
     setMarks((prev) => ({
       ...prev,
@@ -897,7 +997,7 @@ export default function App() {
     }
   };
 
-  const processImport = () => {
+  const processImport = async () => {
     if (importedPreview.length === 0) return;
     const { newStudents, addedCount, skippedCount } = buildImportedStudents(
       importedPreview,
@@ -906,24 +1006,37 @@ export default function App() {
       academicYear
     );
     if (newStudents.length > 0) {
-      setStudents((prev) => [...prev, ...newStudents]);
-      setImportLogs((prev) => [
-        ...prev,
-        {
-          status: "success",
-          message: `Import Successful! Added ${addedCount} students.`,
-        },
-      ]);
-      if (skippedCount > 0) {
+      try {
+        await apiClient.request("/students/batch", "POST", {
+          students: newStudents,
+        });
+        setStudents((prev) => [...prev, ...newStudents]);
         setImportLogs((prev) => [
           ...prev,
           {
-            status: "warning",
-            message: `Skipped ${skippedCount} duplicates or incomplete records.`,
+            status: "success",
+            message: `Import Successful! Added ${addedCount} students.`,
+          },
+        ]);
+        if (skippedCount > 0) {
+          setImportLogs((prev) => [
+            ...prev,
+            {
+              status: "warning",
+              message: `Skipped ${skippedCount} duplicates or incomplete records.`,
+            },
+          ]);
+        }
+        setImportedPreview([]);
+      } catch (e) {
+        setImportLogs((prev) => [
+          ...prev,
+          {
+            status: "error",
+            message: `Import failed: ${(e as Error).message}`,
           },
         ]);
       }
-      setImportedPreview([]);
     } else {
       setImportLogs((prev) => [
         ...prev,
@@ -1659,10 +1772,10 @@ export default function App() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSaveStudent = () => {
+  const handleSaveStudent = async () => {
     if (!validateForm()) return;
     setIsSubmitting(true);
-    setTimeout(() => {
+    try {
       const studentData: Student = {
         id: formData.id,
         surname: formData.surname.toUpperCase(),
@@ -1674,41 +1787,47 @@ export default function App() {
         class: formData.class,
         status: formData.status,
       };
+
+      await apiClient.upsertStudent(studentData);
+
+      // Update local state
       if (editingStudent) {
         setStudents((prev) =>
           prev.map((s) => (s.id === editingStudent.id ? studentData : s))
         );
-        if (editingStudent.id !== formData.id) {
-          setMarks((prev) => {
-            const newMarks: Marks = { ...prev };
-            if (newMarks[editingStudent.id]) {
-              newMarks[formData.id] = newMarks[editingStudent.id];
-              delete newMarks[editingStudent.id];
-            }
-            return newMarks;
-          });
-        }
       } else {
         setStudents((prev) => [...prev, studentData]);
       }
+
       setIsSubmitting(false);
       setShowSuccess(true);
       setTimeout(() => closeModal(), 1500);
-    }, 600);
+    } catch (e) {
+      console.error("Failed to save student", e);
+      setIsSubmitting(false);
+      alert("Failed to save student. Please try again.");
+    }
   };
 
   const initiateDelete = (studentId: string) =>
     setDeleteConfirmation({ isOpen: true, studentId });
-  const confirmDelete = () => {
+
+  const confirmDelete = async () => {
     const idToDelete = deleteConfirmation.studentId;
     if (!idToDelete) return;
-    setStudents((prev) => prev.filter((s) => s.id !== idToDelete));
-    setMarks((prev) => {
-      const newMarks: Marks = { ...prev };
-      delete newMarks[idToDelete];
-      return newMarks;
-    });
-    setDeleteConfirmation({ isOpen: false, studentId: null });
+    try {
+      await apiClient.deleteStudent(idToDelete);
+      setStudents((prev) => prev.filter((s) => s.id !== idToDelete));
+      setMarks((prev) => {
+        const newMarks: Marks = { ...prev };
+        delete newMarks[idToDelete];
+        return newMarks;
+      });
+      setDeleteConfirmation({ isOpen: false, studentId: null });
+    } catch (e) {
+      console.error("Failed to delete student", e);
+      alert("Failed to delete student.");
+    }
   };
   const cancelDelete = () =>
     setDeleteConfirmation({ isOpen: false, studentId: null });
@@ -1725,18 +1844,11 @@ export default function App() {
     setIsWiping(true);
     try {
       try {
-        const resp = await fetch("/api/admin/clean-master-db?confirm=yes", {
-          method: "POST",
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          void data;
-        }
+        await apiClient.adminClean("yes");
       } catch {
         void 0;
       }
-      kvRemove("local", LS_STUDENTS_KEY);
-      kvRemove("local", LS_MARKS_KEY);
+      // Clear local state
       setStudents([]);
       setMarks({} as Marks);
       setFormData({
@@ -1804,15 +1916,99 @@ export default function App() {
     setEditingStudent(null);
   };
 
+  const ProgressStats = () => {
+    if (!user) return null;
+
+    const calculateSubjectProgress = (subj: string, cls: string) => {
+      const studentsInClass = students.filter(
+        (s) => s.class === cls && s.status === "Active"
+      );
+      if (studentsInClass.length === 0) return 0;
+
+      let filled = 0;
+      const total = studentsInClass.length * 7; // 7 fields: cat1-4, group, project, exam
+
+      studentsInClass.forEach((s) => {
+        const m = marks[s.id]?.[subj];
+        if (m) {
+          if (m.cat1) filled++;
+          if (m.cat2) filled++;
+          if (m.cat3) filled++;
+          if (m.cat4) filled++;
+          if (m.group) filled++;
+          if (m.project) filled++;
+          if (m.exam) filled++;
+        }
+      });
+
+      return Math.round((filled / total) * 100);
+    };
+
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200 mb-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+          <BarChart size={20} /> Assessment Progress ({selectedClass})
+        </h3>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {SUBJECTS.filter(
+            (s) => !user.assignedSubjectName || s === user.assignedSubjectName
+          ).map((subj) => {
+            const progress = calculateSubjectProgress(subj, selectedClass);
+            return (
+              <div
+                key={subj}
+                className="bg-slate-50 p-3 rounded-md border border-slate-100"
+              >
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="font-medium">{subj}</span>
+                  <span
+                    className={`font-bold ${
+                      progress === 100 ? "text-green-600" : "text-blue-600"
+                    }`}
+                  >
+                    {progress}%
+                  </span>
+                </div>
+                <progress
+                  value={progress}
+                  max={100}
+                  className={`w-full h-2 rounded-full overflow-hidden ${
+                    progress === 100 ? "accent-green-500" : "accent-blue-500"
+                  }`}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderHome = () => (
     <div className="space-y-6 animate-in fade-in duration-500">
+      <ProgressStats />
       <div className="bg-white p-6 rounded-lg shadow-sm border border-slate-200">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-slate-800">Welcome, Admin</h2>
-          <div className="welcome-loader">
-            <div className="bar">
-              <div className="ball" />
-            </div>
+          <div>
+            <h2 className="text-2xl font-bold text-slate-800">
+              Welcome, {user?.fullName || user?.username || "User"}
+            </h2>
+            <p className="text-slate-500 text-sm">
+              {user?.role === "HEAD"
+                ? "Head Teacher (Administrator)"
+                : user?.role === "CLASS"
+                ? `Class Teacher - ${user.assignedClassName}`
+                : `Subject Teacher - ${user?.assignedSubjectName || ""}`}
+            </p>
+          </div>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={logout}
+              className="flex items-center gap-2 text-red-600 hover:bg-red-50 px-3 py-1 rounded-md transition-colors"
+            >
+              <LogOut size={18} /> Sign Out
+            </button>
           </div>
         </div>
         <div className="flex flex-wrap gap-6 items-end">
@@ -1853,44 +2049,73 @@ export default function App() {
             <select
               value={selectedClass}
               onChange={(e) => setSelectedClass(e.target.value)}
-              className="p-2 border border-slate-300 rounded-md bg-slate-50 w-40"
+              className="p-2 border border-slate-300 rounded-md bg-slate-50 w-40 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Global Class Filter"
+              disabled={user?.role === "CLASS"}
             >
-              <option>JHS 1</option>
-              <option>JHS 2</option>
-              <option>JHS 3</option>
+              <option>JHS 1(A)</option>
+              <option>JHS 1(B)</option>
+              <option>JHS 1(C)</option>
+              <option>JHS 2(A)</option>
+              <option>JHS 2(B)</option>
+              <option>JHS 2(C)</option>
+              <option>JHS 3(A)</option>
+              <option>JHS 3(B)</option>
+              <option>JHS 3(C)</option>
             </select>
           </div>
         </div>
+
+        {/* Progress Bar for Headmaster */}
+        {user?.role === "HEAD" && (
+          <div className="mt-6">
+            <h3 className="text-lg font-semibold text-slate-700 mb-2">
+              Overall Progress
+            </h3>
+            <ProgressBar
+              scope="class"
+              className={selectedClass}
+              academicYear={academicYear}
+              term={term}
+            />
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-3">
             <h3 className="text-lg font-semibold text-slate-700 mb-4">
               Core Subjects
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {SUBJECTS.slice(0, 4).map((subj) => (
-                <DashboardTile
-                  key={subj}
-                  title={subj}
-                  icon={Calculator}
-                  color="bg-blue-600"
-                  imageSrc={
-                    subj === "Mathematics"
-                      ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBNVtepKT2YtCg7GODExQYE-kE7UBGS-1lA&s"
-                      : subj === "English Language"
-                      ? "https://edusoftlearning.com/wp-content/uploads/2018/10/Edusoft-the-English-Language-Learning-Experts-1080x540.jpg"
-                      : subj === "Integrated Science"
-                      ? "https://www.nesdis.noaa.gov/s3/2025-09/science.png"
-                      : subj === "Social Studies"
-                      ? "https://www.championtutor.com/blog/wp-content/uploads/2023/04/Picture31.jpg"
-                      : undefined
-                  }
-                  onClick={() => {
-                    setActiveSubject(subj);
-                    setCurrentView("subject");
-                  }}
-                />
-              ))}
+              {SUBJECTS.slice(0, 4)
+                .filter(
+                  (subj) =>
+                    !user?.assignedSubjectName ||
+                    subj === user.assignedSubjectName
+                )
+                .map((subj) => (
+                  <DashboardTile
+                    key={subj}
+                    title={subj}
+                    icon={Calculator}
+                    color="bg-blue-600"
+                    imageSrc={
+                      subj === "Mathematics"
+                        ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBNVtepKT2YtCg7GODExQYE-kE7UBGS-1lA&s"
+                        : subj === "English Language"
+                        ? "https://edusoftlearning.com/wp-content/uploads/2018/10/Edusoft-the-English-Language-Learning-Experts-1080x540.jpg"
+                        : subj === "Integrated Science"
+                        ? "https://www.nesdis.noaa.gov/s3/2025-09/science.png"
+                        : subj === "Social Studies"
+                        ? "https://www.championtutor.com/blog/wp-content/uploads/2023/04/Picture31.jpg"
+                        : undefined
+                    }
+                    onClick={() => {
+                      setActiveSubject(subj);
+                      setCurrentView("subject");
+                    }}
+                  />
+                ))}
             </div>
           </div>
           <div className="md:col-span-3">
@@ -1898,245 +2123,333 @@ export default function App() {
               Electives & Others
             </h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {SUBJECTS.slice(4).map((subj) => (
+              {SUBJECTS.slice(4)
+                .filter(
+                  (subj) =>
+                    !user?.assignedSubjectName ||
+                    subj === user.assignedSubjectName
+                )
+                .map((subj) => (
+                  <DashboardTile
+                    key={subj}
+                    title={subj}
+                    icon={LayoutGrid}
+                    color="bg-emerald-600"
+                    imageSrc={
+                      subj === "Computing"
+                        ? "https://findvectorlogo.com/wp-content/uploads/2019/11/computing-vector-logo.png"
+                        : subj === "Career Technology"
+                        ? "https://media.licdn.com/dms/image/v2/D4E12AQE5tslHqALWLw/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1673452653564?e=2147483647&v=beta&t=Mv4FYS9k5cJIfRg1JyH1ZmnLkNhlbxAT7ca3j_HaUoM"
+                        : subj === "Creative Arts"
+                        ? "https://www.purpleoaksacademy.org/_site/data/files/images/auto_upload/page/90/D09D84D10AAC9F784E9BADB7AB3A1F93.jpeg"
+                        : subj === "French"
+                        ? "https://lilata.com/wp-content/uploads/francais-translation-french-french-language.jpg"
+                        : subj === "Ghanaian Language"
+                        ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYLygQ4IcqArqcZdObLbj1Zv0nukkTgEqaWw&s"
+                        : subj === "RME"
+                        ? "https://curriculumresources.edu.gh/wp-content/uploads/2024/11/RELIGIOUS-AND-MORAL-EDUCATION-Curriculum-pdf-1024x724.jpg"
+                        : undefined
+                    }
+                    onClick={() => {
+                      setActiveSubject(subj);
+                      setCurrentView("subject");
+                    }}
+                  />
+                ))}
+            </div>
+          </div>
+          {(user?.role === "HEAD" || user?.role === "CLASS") && (
+            <div className="md:col-span-3">
+              <h3 className="text-lg font-semibold text-slate-700 mb-4">
+                Administration
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                {user?.role === "HEAD" && (
+                  <DashboardTile
+                    title="Master Database"
+                    icon={Database}
+                    color="bg-slate-600"
+                    onClick={() => setCurrentView("masterdb")}
+                  />
+                )}
                 <DashboardTile
-                  key={subj}
-                  title={subj}
-                  icon={LayoutGrid}
-                  color="bg-emerald-600"
-                  imageSrc={
-                    subj === "Computing"
-                      ? "https://findvectorlogo.com/wp-content/uploads/2019/11/computing-vector-logo.png"
-                      : subj === "Career Technology"
-                      ? "https://media.licdn.com/dms/image/v2/D4E12AQE5tslHqALWLw/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1673452653564?e=2147483647&v=beta&t=Mv4FYS9k5cJIfRg1JyH1ZmnLkNhlbxAT7ca3j_HaUoM"
-                      : subj === "Creative Arts"
-                      ? "https://www.purpleoaksacademy.org/_site/data/files/images/auto_upload/page/90/D09D84D10AAC9F784E9BADB7AB3A1F93.jpeg"
-                      : subj === "French"
-                      ? "https://lilata.com/wp-content/uploads/francais-translation-french-french-language.jpg"
-                      : subj === "Ghanaian Language"
-                      ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYLygQ4IcqArqcZdObLbj1Zv0nukkTgEqaWw&s"
-                      : subj === "RME"
-                      ? "https://curriculumresources.edu.gh/wp-content/uploads/2024/11/RELIGIOUS-AND-MORAL-EDUCATION-Curriculum-pdf-1024x724.jpg"
-                      : undefined
-                  }
-                  onClick={() => {
-                    setActiveSubject(subj);
-                    setCurrentView("subject");
-                  }}
+                  title="Report Cards"
+                  icon={FileText}
+                  color="bg-slate-600"
+                  onClick={() => setCurrentView("report")}
                 />
-              ))}
+                {user?.role === "HEAD" && (
+                  <DashboardTile
+                    title="System Setup"
+                    icon={Settings}
+                    color="bg-slate-600"
+                    onClick={() => setCurrentView("setup")}
+                  />
+                )}
+              </div>
             </div>
-          </div>
-          <div className="md:col-span-3">
-            <h3 className="text-lg font-semibold text-slate-700 mb-4">
-              Administration
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <DashboardTile
-                title="Master Database"
-                icon={Database}
-                color="bg-slate-600"
-                onClick={() => setCurrentView("masterdb")}
-              />
-              <DashboardTile
-                title="Report Cards"
-                icon={FileText}
-                color="bg-slate-600"
-                onClick={() => setCurrentView("report")}
-              />
-              <DashboardTile
-                title="System Setup"
-                icon={Settings}
-                color="bg-slate-600"
-                onClick={() => setCurrentView("setup")}
-              />
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
   );
 
-  const renderSubjectSheet = () => (
-    <div className="bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-100px)]">
-      <div className="p-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
-        <div>
-          <h2 className="text-xl font-bold text-blue-900">
-            {activeSubject} Assessment Sheet
-          </h2>
-          <p className="text-sm text-blue-600">
-            Class: {selectedClass} | {academicYear} - {term} | Weighting:{" "}
-            {schoolConfig.catWeight}% Class / {schoolConfig.examWeight}% Exam
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <button
-            onClick={() => setIsAssessmentUploadOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
-            aria-label="Upload assessment sheet"
-          >
-            <Upload size={16} /> Upload Sheet
-          </button>
-          <span className="px-2 py-1 text-blue-700 text-sm w-full sm:w-auto text-center sm:text-left">
-            Format: Excel (.xlsx)
-          </span>
-          <button
-            onClick={downloadSubjectTemplate}
-            disabled={isGeneratingTemplate}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
-            aria-label="Download assessment template"
-          >
-            {isGeneratingTemplate ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <Download size={16} />
-            )}
-            Download Template
-          </button>
-          <button
-            onClick={exportSubjectSheetToExcel}
-            disabled={isGeneratingDoc}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
-            aria-label="Export to Excel"
-            title="Export to Excel"
-          >
-            {isGeneratingDoc ? (
-              <Loader2 size={16} className="animate-spin" />
-            ) : (
-              <FileSpreadsheet size={16} />
-            )}
-            Export to Excel
-          </button>
-          <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold w-full sm:w-auto text-center sm:text-left mt-1 sm:mt-0">
-            Auto-Save Active
-          </span>
-        </div>
-      </div>
-      <div className="overflow-auto flex-1">
-        {isGeneratingTemplate && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="px-4 py-2 text-xs text-blue-700"
-          >
-            {templateStatus}
+  const renderSubjectSheet = () => {
+    return (
+      <div className="bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-100px)]">
+        <div className="p-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
+          <div>
+            <h2 className="text-xl font-bold text-blue-900">
+              {activeSubject} Assessment Sheet
+            </h2>
+            <p className="text-sm text-blue-600">
+              Class: {selectedClass} | {academicYear} - {term} | Weighting:{" "}
+              {schoolConfig.catWeight}% Class / {schoolConfig.examWeight}% Exam
+            </p>
           </div>
-        )}
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10 shadow-sm">
-            <tr>
-              <th className="px-4 py-3 w-16">ID</th>
-              <th className="px-4 py-3 w-48">Name</th>
-              <th className="px-2 py-3 text-center bg-blue-50">T1</th>
-              <th className="px-2 py-3 text-center bg-blue-50">T2</th>
-              <th className="px-2 py-3 text-center bg-blue-50">T3</th>
-              <th className="px-2 py-3 text-center bg-blue-50">T4</th>
-              <th className="px-2 py-3 text-center bg-purple-50">Grp</th>
-              <th className="px-2 py-3 text-center bg-purple-50">Proj</th>
-              <th className="px-2 py-3 text-center font-bold">Tot</th>
-              <th className="px-2 py-3 text-center font-bold bg-green-50">
-                SBA
-              </th>
-              <th className="px-2 py-3 text-center bg-red-50">Exam</th>
-              <th className="px-2 py-3 text-center font-bold bg-green-50">
-                50%
-              </th>
-              <th className="px-4 py-3 text-center font-black">Fin</th>
-              <th className="px-4 py-3 text-center">Grd</th>
-              <th className="px-4 py-3 text-center">Rem</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {filteredStudents.map((student) => {
-              const m = marks[student.id]?.[activeSubject] || {
-                cat1: 0,
-                cat2: 0,
-                cat3: 0,
-                cat4: 0,
-                group: 0,
-                project: 0,
-                exam: 0,
-              };
-              const rawSBA =
-                m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
-              const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
-              const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
-              const final = Math.round(scaledSBA + scaledExam);
-              const g = calculateGrade(final);
-              return (
-                <tr key={student.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs">{student.id}</td>
-                  <td className="px-4 py-3 font-medium">
-                    {student.surname}, {student.firstName}
-                  </td>
-                  {["cat1", "cat2", "cat3", "cat4"].map((f) => (
-                    <td key={f} className="p-1">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <button
+              onClick={() => {
+                if (user?.role === "CLASS") {
+                  alert("Access Denied: Uploading assessments is restricted.");
+                  return;
+                }
+                setIsAssessmentUploadOpen(true);
+              }}
+              className={`flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center ${
+                user?.role === "CLASS" ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+              aria-label="Upload assessment sheet"
+            >
+              <Upload size={16} /> Upload Sheet
+            </button>
+            <span className="px-2 py-1 text-blue-700 text-sm w-full sm:w-auto text-center sm:text-left">
+              Format: Excel (.xlsx)
+            </span>
+            <button
+              onClick={downloadSubjectTemplate}
+              disabled={isGeneratingTemplate}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
+              aria-label="Download assessment template"
+            >
+              {isGeneratingTemplate ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              Download Template
+            </button>
+            <button
+              onClick={exportSubjectSheetToExcel}
+              disabled={isGeneratingDoc}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors w-full sm:w-auto justify-center"
+              aria-label="Export to Excel"
+              title="Export to Excel"
+            >
+              {isGeneratingDoc ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <FileSpreadsheet size={16} />
+              )}
+              Export to Excel
+            </button>
+            <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold w-full sm:w-auto text-center sm:text-left mt-1 sm:mt-0">
+              Auto-Save Active
+            </span>
+          </div>
+        </div>
+        {/* Subject Progress Bar */}
+        <div className="px-4 pt-4">
+          <ProgressBar
+            scope="subject"
+            className={selectedClass}
+            subjectName={activeSubject}
+            academicYear={academicYear}
+            term={term}
+          />
+        </div>
+        <div className="overflow-auto flex-1">
+          {isGeneratingTemplate && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="px-4 py-2 text-xs text-blue-700"
+            >
+              {templateStatus}
+            </div>
+          )}
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-slate-700 uppercase bg-slate-100 sticky top-0 z-10 shadow-sm">
+              <tr>
+                <th className="px-4 py-3 w-16">ID</th>
+                <th className="px-4 py-3 w-48">Name</th>
+                <th className="px-2 py-3 text-center bg-blue-50">T1</th>
+                <th className="px-2 py-3 text-center bg-blue-50">T2</th>
+                <th className="px-2 py-3 text-center bg-blue-50">T3</th>
+                <th className="px-2 py-3 text-center bg-blue-50">T4</th>
+                <th className="px-2 py-3 text-center bg-purple-50">Grp</th>
+                <th className="px-2 py-3 text-center bg-purple-50">Proj</th>
+                <th className="px-2 py-3 text-center font-bold">Tot</th>
+                <th className="px-2 py-3 text-center font-bold bg-green-50">
+                  SBA
+                </th>
+                <th className="px-2 py-3 text-center bg-red-50">Exam</th>
+                <th className="px-2 py-3 text-center font-bold bg-green-50">
+                  50%
+                </th>
+                <th className="px-4 py-3 text-center font-black">Fin</th>
+                <th className="px-4 py-3 text-center">Grd</th>
+                <th className="px-4 py-3 text-center">Rem</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {filteredStudents.map((student) => {
+                const m = marks[student.id]?.[activeSubject] || {
+                  cat1: 0,
+                  cat2: 0,
+                  cat3: 0,
+                  cat4: 0,
+                  group: 0,
+                  project: 0,
+                  exam: 0,
+                };
+                const rawSBA =
+                  m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
+                const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+                const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
+                const final = Math.round(scaledSBA + scaledExam);
+                const g = calculateGrade(final);
+                return (
+                  <tr key={student.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-mono text-xs">
+                      {student.id}
+                    </td>
+                    <td className="px-4 py-3 font-medium">
+                      {student.surname}, {student.firstName}
+                    </td>
+                    {["cat1", "cat2", "cat3", "cat4"].map((f) => (
+                      <td key={f} className="p-1">
+                        <input
+                          type="number"
+                          className={`w-full text-center border rounded p-1 ${
+                            user?.role === "CLASS"
+                              ? "bg-slate-100 text-slate-500 cursor-not-allowed"
+                              : ""
+                          }`}
+                          value={m[f as keyof typeof m]}
+                          onChange={(e) =>
+                            updateMark(student.id, f, e.target.value)
+                          }
+                          readOnly={user?.role === "CLASS"}
+                          onClick={(e) => {
+                            if (user?.role === "CLASS") {
+                              e.preventDefault();
+                              alert(
+                                "Access Denied: Subject Marks are managed by Subject Teachers."
+                              );
+                            }
+                          }}
+                          aria-label={`Enter ${f.toUpperCase()} score for ${
+                            student.surname
+                          }`}
+                        />
+                      </td>
+                    ))}
+                    <td className="p-1">
                       <input
                         type="number"
-                        className="w-full text-center border rounded p-1"
-                        value={m[f as keyof typeof m]}
-                        onChange={(e) =>
-                          updateMark(student.id, f, e.target.value)
-                        }
-                        aria-label={`Enter ${f.toUpperCase()} score for ${
-                          student.surname
+                        className={`w-full text-center border rounded p-1 bg-purple-50 ${
+                          user?.role === "CLASS"
+                            ? "opacity-60 cursor-not-allowed"
+                            : ""
                         }`}
+                        value={m.group}
+                        onChange={(e) =>
+                          updateMark(student.id, "group", e.target.value)
+                        }
+                        readOnly={user?.role === "CLASS"}
+                        onClick={(e) => {
+                          if (user?.role === "CLASS") {
+                            e.preventDefault();
+                            alert(
+                              "Access Denied: Subject Marks are managed by Subject Teachers."
+                            );
+                          }
+                        }}
+                        aria-label={`Enter GROUP score for ${student.surname}`}
                       />
                     </td>
-                  ))}
-                  <td className="p-1">
-                    <input
-                      type="number"
-                      className="w-full text-center border rounded p-1 bg-purple-50"
-                      value={m.group}
-                      onChange={(e) =>
-                        updateMark(student.id, "group", e.target.value)
-                      }
-                      aria-label={`Enter GROUP score for ${student.surname}`}
-                    />
-                  </td>
-                  <td className="p-1">
-                    <input
-                      type="number"
-                      className="w-full text-center border rounded p-1 bg-purple-50"
-                      value={m.project}
-                      onChange={(e) =>
-                        updateMark(student.id, "project", e.target.value)
-                      }
-                      aria-label={`Enter PROJECT score for ${student.surname}`}
-                    />
-                  </td>
-                  <td className="px-2 text-center text-slate-500">{rawSBA}</td>
-                  <td className="px-2 text-center font-bold text-green-700">
-                    {scaledSBA.toFixed(1)}
-                  </td>
-                  <td className="p-1">
-                    <input
-                      type="number"
-                      className="w-full text-center border rounded p-1 bg-red-50"
-                      value={m.exam}
-                      onChange={(e) =>
-                        updateMark(student.id, "exam", e.target.value)
-                      }
-                      aria-label={`Enter EXAM score for ${student.surname}`}
-                    />
-                  </td>
-                  <td className="px-2 text-center font-bold text-green-700">
-                    {scaledExam.toFixed(1)}
-                  </td>
-                  <td className="px-4 text-center font-black">{final}</td>
-                  <td className="px-4 text-center font-bold text-blue-600">
-                    {g.grade}
-                  </td>
-                  <td className="px-4 text-center text-xs">{g.desc}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    <td className="p-1">
+                      <input
+                        type="number"
+                        className={`w-full text-center border rounded p-1 bg-purple-50 ${
+                          user?.role === "CLASS"
+                            ? "opacity-60 cursor-not-allowed"
+                            : ""
+                        }`}
+                        value={m.project}
+                        onChange={(e) =>
+                          updateMark(student.id, "project", e.target.value)
+                        }
+                        readOnly={user?.role === "CLASS"}
+                        onClick={(e) => {
+                          if (user?.role === "CLASS") {
+                            e.preventDefault();
+                            alert(
+                              "Access Denied: Subject Marks are managed by Subject Teachers."
+                            );
+                          }
+                        }}
+                        aria-label={`Enter PROJECT score for ${student.surname}`}
+                      />
+                    </td>
+                    <td className="px-2 text-center text-slate-500">
+                      {rawSBA}
+                    </td>
+                    <td className="px-2 text-center font-bold text-green-700">
+                      {scaledSBA.toFixed(1)}
+                    </td>
+                    <td className="p-1">
+                      <input
+                        type="number"
+                        className={`w-full text-center border rounded p-1 bg-red-50 ${
+                          user?.role === "CLASS"
+                            ? "opacity-60 cursor-not-allowed"
+                            : ""
+                        }`}
+                        value={m.exam}
+                        onChange={(e) =>
+                          updateMark(student.id, "exam", e.target.value)
+                        }
+                        readOnly={user?.role === "CLASS"}
+                        onClick={(e) => {
+                          if (user?.role === "CLASS") {
+                            e.preventDefault();
+                            alert(
+                              "Access Denied: Subject Marks are managed by Subject Teachers."
+                            );
+                          }
+                        }}
+                        aria-label={`Enter EXAM score for ${student.surname}`}
+                      />
+                    </td>
+                    <td className="px-2 text-center font-bold text-green-700">
+                      {scaledExam.toFixed(1)}
+                    </td>
+                    <td className="px-4 text-center font-black">{final}</td>
+                    <td className="px-4 text-center font-bold text-blue-600">
+                      {g.grade}
+                    </td>
+                    <td className="px-4 text-center text-xs">{g.desc}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const [isAssessmentUploadOpen, setIsAssessmentUploadOpen] = useState(false);
   const [assessmentFile, setAssessmentFile] = useState<File | null>(null);
@@ -2155,10 +2468,7 @@ export default function App() {
     return "w-full";
   };
   // Class remarks and attendance data intentionally removed per data purge request
-  const [attendancePresent, setAttendancePresent] = useState("");
-  const [attendanceTotal, setAttendanceTotal] = useState("");
-  const [talentRemark, setTalentRemark] = useState("");
-  const [talentRemarkOther, setTalentRemarkOther] = useState("");
+
   const [talentRemarkError, setTalentRemarkError] = useState<string | null>(
     null
   );
@@ -2198,8 +2508,7 @@ export default function App() {
     "Organized",
     "Other",
   ]);
-  const [teacherRemark, setTeacherRemark] = useState("");
-  const [teacherRemarkOther, setTeacherRemarkOther] = useState("");
+
   const [teacherRemarkError, setTeacherRemarkError] = useState<string | null>(
     null
   );
@@ -3142,7 +3451,6 @@ export default function App() {
                 talentRemarkError ? "border-red-500" : "border-slate-300"
               }`}
               aria-label="Talent and interest remark"
-              aria-invalid={talentRemarkError ? "true" : "false"}
               aria-errormessage="talent-remark-error"
               onInvalid={() => setTalentRemarkError("Required")}
               required
@@ -3306,6 +3614,16 @@ export default function App() {
             </h2>
             <div className="border-b border-slate-800 mb-6"></div>
           </div>
+
+          <div className="mb-6 print:hidden">
+            <ProgressBar
+              scope="class"
+              className={selectedClass}
+              academicYear={academicYear}
+              term={term}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4 text-sm mb-6 border border-slate-300 p-4 rounded bg-slate-50">
             <div>
               <span className="font-bold text-slate-500">Name:</span>{" "}
@@ -3454,7 +3772,26 @@ export default function App() {
 
                 <div className="space-y-4 flex-1">
                   {/* Attendance */}
-                  <div className="bg-slate-50 p-3 rounded border border-slate-100">
+                  <div
+                    className={`bg-slate-50 p-3 rounded border border-slate-100 relative ${
+                      user?.role === "CLASS"
+                        ? "cursor-not-allowed opacity-80"
+                        : ""
+                    }`}
+                    onClickCapture={(e) => {
+                      if (user?.role === "CLASS") {
+                        e.stopPropagation();
+                        alert(
+                          "Access Denied: You do not have permission to edit Attendance."
+                        );
+                      }
+                    }}
+                    title={
+                      user?.role === "CLASS"
+                        ? "View Only: Attendance is managed by Administration"
+                        : "Attendance"
+                    }
+                  >
                     <div className="text-xs font-semibold text-slate-600 mb-2">
                       ATTENDANCE
                     </div>
@@ -3462,161 +3799,232 @@ export default function App() {
                       <input
                         type="number"
                         min="0"
-                        className="w-16 border-b border-slate-400 bg-transparent text-center focus:outline-none focus:border-blue-500 px-1"
+                        className={`w-16 border-b border-slate-400 bg-transparent text-center focus:outline-none focus:border-blue-500 px-1 ${
+                          user?.role === "CLASS" ? "pointer-events-none" : ""
+                        }`}
                         placeholder="0"
                         value={attendancePresent}
                         onChange={(e) => setAttendancePresent(e.target.value)}
                         aria-label="Days present"
+                        readOnly={user?.role === "CLASS"}
+                        tabIndex={user?.role === "CLASS" ? -1 : 0}
                       />
                       <span className="mb-1 font-medium">out of</span>
                       <input
                         type="number"
                         min="0"
-                        className="w-16 border-b border-slate-400 bg-transparent text-center focus:outline-none focus:border-blue-500 px-1"
+                        className={`w-16 border-b border-slate-400 bg-transparent text-center focus:outline-none focus:border-blue-500 px-1 ${
+                          user?.role === "CLASS" ? "pointer-events-none" : ""
+                        }`}
                         placeholder="0"
                         value={attendanceTotal}
                         onChange={(e) => setAttendanceTotal(e.target.value)}
                         aria-label="Total days"
+                        readOnly={user?.role === "CLASS"}
+                        tabIndex={user?.role === "CLASS" ? -1 : 0}
                       />
                     </div>
                   </div>
 
-                  {/* Talent */}
-                  <div>
-                    <label
-                      htmlFor="talent-remark"
-                      className="block text-xs font-bold text-slate-700 mb-1.5"
-                    >
-                      TALENT & INTEREST
-                    </label>
-                    <select
-                      id="talent-remark"
-                      value={talentRemark}
-                      onChange={(e) => {
-                        setTalentRemark(e.target.value);
-                        const err = e.target.value ? null : "Required";
-                        setTalentRemarkError(err);
-                        logger.info("talent_remark_changed", {
-                          value: e.target.value,
-                        });
-                      }}
-                      className={`w-full text-xs border-b border-slate-300 rounded-none p-2 bg-transparent focus:outline-none focus:border-blue-500 ${
-                        talentRemarkError ? "border-red-500" : ""
-                      }`}
-                      aria-label="Talent and interest remark"
-                      aria-invalid={talentRemarkError ? "true" : "false"}
-                      aria-errormessage="talent-remark-error-report"
-                      onInvalid={() => setTalentRemarkError("Required")}
-                      required
-                    >
-                      <option value="" title="Required">
-                        Select a template
-                      </option>
-                      {talentRemarkOptionsGrouped.map((g) => (
-                        <optgroup key={g.group} label={g.group}>
-                          {g.options.map((opt) => (
-                            <option
-                              key={`${g.group}-${opt}`}
-                              value={opt}
-                              title={opt}
-                            >
-                              {opt}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                    {/* Additional underscores for visual separation */}
-                    <div className="border-b border-slate-200 h-8 w-full"></div>
-                    <div className="border-b border-slate-200 h-8 w-full"></div>
-
-                    {talentRemarkError && (
-                      <p
-                        id="talent-remark-error-report"
-                        className="text-red-600 text-xs mt-1"
-                        role="alert"
+                  {/* Talent & Teacher Remark Section (Editable by Class Teacher) */}
+                  <div
+                    className={`transition-all duration-200 rounded-lg ${
+                      user?.role === "CLASS" || hasTalentChanges
+                        ? "ring-2 ring-blue-100 bg-blue-50/30 p-3 -mx-3 border border-blue-200 border-dashed"
+                        : ""
+                    }`}
+                  >
+                    {/* Talent */}
+                    <div>
+                      <label
+                        htmlFor="talent-remark"
+                        className="block text-xs font-bold text-slate-700 mb-1.5 flex justify-between"
                       >
-                        {talentRemarkError}
-                      </p>
-                    )}
-                    {talentRemark === "Other" && (
-                      <input
-                        id="talent-remark-other-report"
-                        value={talentRemarkOther}
+                        <span>TALENT & INTEREST</span>
+                        {(user?.role === "CLASS" || hasTalentChanges) && (
+                          <span className="text-[10px] text-blue-600 font-normal bg-blue-100 px-1.5 py-0.5 rounded">
+                            Editable
+                          </span>
+                        )}
+                      </label>
+                      <select
+                        id="talent-remark"
+                        value={talentRemark}
                         onChange={(e) => {
-                          setTalentRemarkOther(e.target.value);
-                          const err =
-                            e.target.value.length >= 20
-                              ? null
-                              : "Minimum 20 characters";
+                          setTalentRemark(e.target.value);
+                          const err = e.target.value ? null : "Required";
                           setTalentRemarkError(err);
+                          logger.info("talent_remark_changed", {
+                            value: e.target.value,
+                          });
                         }}
-                        className={`w-full text-xs border-b border-slate-300 rounded-none p-2 mt-2 bg-transparent focus:outline-none focus:border-blue-500 ${
+                        className={`w-full text-xs border-b border-slate-300 rounded-none p-2 bg-transparent focus:outline-none focus:border-blue-500 ${
                           talentRemarkError ? "border-red-500" : ""
                         }`}
-                        aria-label="Custom talent remark"
-                        placeholder="Specify other (min 20 characters)"
-                      />
-                    )}
-                    {!talentRemarkError && talentRemark && (
-                      <p className="text-xs text-green-700 mt-1">Valid</p>
-                    )}
-                  </div>
-
-                  {/* Class Teacher Remark */}
-                  <div>
-                    <label
-                      htmlFor="teacher-remark"
-                      className="block text-xs font-bold text-slate-700 mb-1.5"
-                    >
-                      CLASS TEACHER'S REMARK
-                    </label>
-                    <select
-                      id="teacher-remark"
-                      data-testid="teacher-remark-select"
-                      value={teacherRemark}
-                      onChange={(e) => {
-                        setTeacherRemark(e.target.value);
-                        setTeacherRemarkError(
-                          e.target.value ? null : "Required"
-                        );
-                        logger.info("teacher_remark_changed", {
-                          value: e.target.value,
-                        });
-                      }}
-                      className="w-full text-xs border-b border-slate-300 rounded-none p-2 bg-transparent focus:outline-none focus:border-blue-500"
-                      aria-label="Teacher remark"
-                      required
-                    >
-                      <option value="" title="Required">
-                        Select a remark
-                      </option>
-                      {teacherRemarkOptions.map((opt) => (
-                        <option key={opt} value={opt} title={opt}>
-                          {opt}
+                        aria-label="Talent and interest remark"
+                        aria-errormessage="talent-remark-error-report"
+                        onInvalid={() => setTalentRemarkError("Required")}
+                        required
+                      >
+                        <option value="" title="Required">
+                          Select a template
                         </option>
-                      ))}
-                    </select>
-                    {/* Extended underscores for writing space */}
-                    <div className="border-b border-slate-200 h-8 w-full"></div>
-                    <div className="border-b border-slate-200 h-8 w-full"></div>
-                    <div className="border-b border-slate-200 h-8 w-full"></div>
+                        {talentRemarkOptionsGrouped.map((g) => (
+                          <optgroup key={g.group} label={g.group}>
+                            {g.options.map((opt) => (
+                              <option
+                                key={`${g.group}-${opt}`}
+                                value={opt}
+                                title={opt}
+                              >
+                                {opt}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                      {/* Additional underscores for visual separation */}
+                      <div className="border-b border-slate-200 h-8 w-full"></div>
+                      <div className="border-b border-slate-200 h-8 w-full"></div>
 
-                    {teacherRemark === "Other" && (
-                      <input
-                        id="teacher-remark-other-report"
-                        value={teacherRemarkOther}
-                        onChange={(e) => setTeacherRemarkOther(e.target.value)}
-                        className="w-full text-xs border-b border-slate-300 rounded-none p-2 mt-2 bg-transparent focus:outline-none focus:border-blue-500"
-                        aria-label="Custom teacher remark"
-                        placeholder="Specify other remark"
-                      />
-                    )}
-                    {teacherRemarkError && (
-                      <p className="text-xs text-red-600 mt-1">
-                        {teacherRemarkError}
-                      </p>
-                    )}
+                      {talentRemarkError && (
+                        <p
+                          id="talent-remark-error-report"
+                          className="text-red-600 text-xs mt-1"
+                          role="alert"
+                        >
+                          {talentRemarkError}
+                        </p>
+                      )}
+                      {talentRemark === "Other" && (
+                        <input
+                          id="talent-remark-other-report"
+                          value={talentRemarkOther}
+                          onChange={(e) => {
+                            setTalentRemarkOther(e.target.value);
+                            const err =
+                              e.target.value.length >= 20
+                                ? null
+                                : "Minimum 20 characters";
+                            setTalentRemarkError(err);
+                          }}
+                          className={`w-full text-xs border-b border-slate-300 rounded-none p-2 mt-2 bg-transparent focus:outline-none focus:border-blue-500 ${
+                            talentRemarkError ? "border-red-500" : ""
+                          }`}
+                          aria-label="Custom talent remark"
+                          placeholder="Specify other (min 20 characters)"
+                        />
+                      )}
+                      {!talentRemarkError && talentRemark && (
+                        <p className="text-xs text-green-700 mt-1">Valid</p>
+                      )}
+                    </div>
+
+                    {/* Class Teacher Remark */}
+                    <div className="mt-4 relative">
+                      {user?.role === "CLASS" && (
+                        <div
+                          className="absolute inset-0 z-10 cursor-not-allowed"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            alert(
+                              "Access Denied: All sections except 'Talent and Interest' are locked."
+                            );
+                          }}
+                          title="View Only: Locked"
+                        ></div>
+                      )}
+                      <label
+                        htmlFor="teacher-remark"
+                        className="block text-xs font-bold text-slate-700 mb-1.5"
+                      >
+                        CLASS TEACHER'S REMARK
+                      </label>
+                      <select
+                        id="teacher-remark"
+                        data-testid="teacher-remark-select"
+                        value={teacherRemark}
+                        onChange={(e) => {
+                          setTeacherRemark(e.target.value);
+                          setTeacherRemarkError(
+                            e.target.value ? null : "Required"
+                          );
+                          logger.info("teacher_remark_changed", {
+                            value: e.target.value,
+                          });
+                        }}
+                        className={`w-full text-xs border-b border-slate-300 rounded-none p-2 bg-transparent focus:outline-none focus:border-blue-500 ${
+                          user?.role === "CLASS" ? "opacity-60" : ""
+                        }`}
+                        aria-label="Teacher remark"
+                        required
+                        disabled={user?.role === "CLASS"}
+                      >
+                        <option value="" title="Required">
+                          Select a remark
+                        </option>
+                        {teacherRemarkOptions.map((opt) => (
+                          <option key={opt} value={opt} title={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                      {/* Extended underscores for writing space */}
+                      <div className="border-b border-slate-200 h-8 w-full"></div>
+                      <div className="border-b border-slate-200 h-8 w-full"></div>
+                      <div className="border-b border-slate-200 h-8 w-full"></div>
+
+                      {teacherRemark === "Other" && (
+                        <input
+                          id="teacher-remark-other-report"
+                          value={teacherRemarkOther}
+                          onChange={(e) =>
+                            setTeacherRemarkOther(e.target.value)
+                          }
+                          className="w-full text-xs border-b border-slate-300 rounded-none p-2 mt-2 bg-transparent focus:outline-none focus:border-blue-500"
+                          aria-label="Custom teacher remark"
+                          placeholder="Specify other remark"
+                        />
+                      )}
+                      {teacherRemarkError && (
+                        <p className="text-xs text-red-600 mt-1">
+                          {teacherRemarkError}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="mt-4 flex gap-2 justify-end print:hidden">
+                      {hasTalentChanges && (
+                        <button
+                          onClick={handleCancelTalent}
+                          className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded hover:bg-slate-50 transition-colors"
+                          title="Discard changes"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                      <button
+                        id="save-talent-btn"
+                        onClick={handleSaveTalent}
+                        disabled={!hasTalentChanges || isTalentSaving}
+                        className={`px-3 py-1.5 text-xs font-bold text-white rounded flex items-center gap-1.5 transition-all shadow-sm ${
+                          !hasTalentChanges || isTalentSaving
+                            ? "bg-slate-400 cursor-not-allowed opacity-70"
+                            : "bg-blue-600 hover:bg-blue-700 hover:shadow-md active:transform active:scale-95"
+                        }`}
+                        title="Save changes to Talent & Interest"
+                      >
+                        {isTalentSaving ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Save size={12} />
+                        )}
+                        <span>
+                          {isTalentSaving ? "Saving..." : "Save Changes"}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -4441,7 +4849,7 @@ export default function App() {
               <thead>
                 <tr className="text-left text-slate-500">
                   <th className="py-2 px-2">Name</th>
-                  <th className="py-2 px-2">Kind</th>
+                  <th className="py-2 px-2">Tags</th>
                   <th className="py-2 px-2">Type</th>
                   <th className="py-2 px-2">Size</th>
                   <th className="py-2 px-2">Imported</th>
@@ -4452,10 +4860,10 @@ export default function App() {
                 {storageItems.map((m) => (
                   <tr key={m.id} className="border-t border-slate-100">
                     <td className="py-2 px-2">{m.name || m.id}</td>
-                    <td className="py-2 px-2">{m.kind}</td>
+                    <td className="py-2 px-2">{(m.tags || []).join(", ")}</td>
                     <td className="py-2 px-2">{m.type}</td>
                     <td className="py-2 px-2">{`${(
-                      m.size /
+                      (m.size ?? 0) /
                       (1024 * 1024)
                     ).toFixed(2)} MB`}</td>
                     <td className="py-2 px-2">
@@ -4464,9 +4872,7 @@ export default function App() {
                           const t = m.type || "";
                           const n = m.name || "";
                           const isExcelMime = /spreadsheetml|ms-excel/i.test(t);
-                          const isExcelName =
-                            /\.(xlsx|xlsm|xls)$/i.test(n) &&
-                            m.kind === "upload";
+                          const isExcelName = /\.(xlsx|xlsm|xls)$/i.test(n);
                           return isExcelMime || isExcelName;
                         })() && (
                           <button

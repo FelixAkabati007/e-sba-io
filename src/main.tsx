@@ -4,44 +4,20 @@ import App from "./App";
 import "./index.css";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { inject } from "@vercel/analytics";
-import { ClientSync } from "./lib/sync";
-const apiBase =
-  (import.meta as unknown as { env?: Record<string, string> }).env?.[
-    "VITE_API_BASE"
-  ] || "/api";
-import { supabase } from "./lib/supabase";
+import { AuthProvider } from "./context/AuthContext";
+import { ProtectedRoute } from "./components/ProtectedRoute";
 
 const rootEl = document.getElementById("root")!;
 if (import.meta.env.PROD) inject();
-const token =
-  typeof localStorage !== "undefined"
-    ? localStorage.getItem("BLOB_RW_TOKEN") || undefined
-    : undefined;
-const clientSync = new ClientSync({
-  baseUrl: apiBase,
-  token,
-  throttleMs: 1000,
-  batchSize: 50,
-});
-clientSync.start();
 
-(async () => {
-  if (!supabase) return;
-  try {
-    const { data, error } = await supabase.from("subjects").select().limit(1);
-    if (error) {
-      console.warn("[Supabase]", { error });
-    } else {
-      console.info("[Supabase]", { ok: true, sample: data });
-    }
-  } catch (e) {
-    console.error("[Supabase]", { e });
-  }
-})();
 createRoot(rootEl).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <AuthProvider>
+        <ProtectedRoute>
+          <App />
+        </ProtectedRoute>
+      </AuthProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );

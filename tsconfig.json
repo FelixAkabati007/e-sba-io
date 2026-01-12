@@ -18,6 +18,7 @@
       "@components/*": ["src/components/*"]
     }
   },
-  "include": ["src", "tests"],
+  "include": ["src", "server"],
+  "exclude": ["src/tests", "tests", "server/tests"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -7,15 +7,6 @@ import crypto from "crypto";
 import fs from "fs";
 import rateLimit from "express-rate-limit";
 import {
-  parseAssessmentSheet,
-  saveMarksTransaction,
-} from "./services/assessments";
-import { audit } from "./services/assessmentRepo";
-import {
-  saveMarksSupabase,
-  getSubjectSheetSupabase,
-} from "./services/supabaseAssessments";
-import {
   buildAssessmentTemplateXLSX,
   buildAssessmentTemplateCSV,
   buildAssessmentTemplate,
@@ -29,21 +20,36 @@ import {
 } from "./services/signatures";
 import { pool } from "./lib/db";
 import blobdbRouter from "./routes/blobdb";
-import syncRouter from "./routes/sync";
-import assessRepoRouter from "./routes/assessrepo";
-import { supabaseAdmin } from "./lib/supabase";
+import authRouter from "./routes/auth";
+import reportingRouter from "./routes/reporting";
+import configRouter from "./routes/config";
+import assessmentsRouter from "./routes/assessments";
+import studentsRouter from "./routes/students";
+import progressRouter from "./routes/progress";
+import { seedAuth } from "./services/auth";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use("/api/auth", authRouter);
+app.use("/api/reporting", reportingRouter);
+app.use("/api/config", configRouter);
+app.use("/api/assessments", assessmentsRouter);
+app.use("/api/students", studentsRouter);
 app.use("/api/blobdb", blobdbRouter);
-app.use("/api/sync", syncRouter);
-app.use("/api/assessrepo", assessRepoRouter);
+app.use("/api/progress", progressRouter);
+// app.use("/api/sync", syncRouter); // Deprecated in favor of direct SQL
+// app.use("/api/assessrepo", assessRepoRouter); // Deprecated in favor of direct SQL
 
 // Serve built client app (dist) for production deployments
 app.use(express.static(path.join(process.cwd(), "dist")));
+
+// Catch-all route to serve index.html for client-side routing
+app.get(/.*/, (_req, res) => {
+  res.sendFile(path.join(process.cwd(), "dist", "index.html"));
+});
 
 // Global error handler to ensure JSON errors (including Multer/file upload issues)
 app.use(
@@ -70,32 +76,13 @@ app.use(
 
 app.get("/api/db/health", async (_req: Request, res: Response) => {
   try {
-    const conn = await pool.getConnection();
-    const [rows] = await conn.query("SELECT 1 AS ok");
-    conn.release();
+    const client = await pool.connect();
+    const { rows } = await client.query("SELECT 1 AS ok");
+    client.release();
     res.json({ ok: true, rows });
   } catch (e) {
     const err = e as Error;
     res.status(500).json({ ok: false, error: err.message || "DB error" });
-  }
-});
-
-app.get("/api/supabase/health", async (_req: Request, res: Response) => {
-  try {
-    if (!supabaseAdmin)
-      return res
-        .status(500)
-        .json({ ok: false, error: "Supabase not configured" });
-    // Try a lightweight query against a known table if present
-    const { data, error } = await supabaseAdmin
-      .from("subjects")
-      .select("subject_id")
-      .limit(1);
-    if (error) return res.status(500).json({ ok: false, error: error.message });
-    res.json({ ok: true, sample: data ?? [] });
-  } catch (e) {
-    const err = e as Error;
-    res.status(500).json({ ok: false, error: err.message || "Supabase error" });
   }
 });
 
@@ -136,14 +123,10 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-async function scanFileForVirus(_filePath: string): Promise<boolean> {
-  if (String(process.env.SCAN_ENABLED || "0") !== "1") return true;
-  void _filePath;
-  return true;
-}
-
+// Cleanup Uploads
 function cleanupUploads(dir: string, maxAgeMs: number): void {
   try {
+    if (!fs.existsSync(dir)) return;
     const now = Date.now();
     const entries = fs.readdirSync(dir);
     entries.forEach((name) => {
@@ -156,125 +139,7 @@ function cleanupUploads(dir: string, maxAgeMs: number): void {
     return;
   }
 }
-
-app.post(
-  "/api/assessments/upload",
-  upload.single("file"),
-  async (req: Request, res: Response) => {
-    try {
-      const token = process.env.UPLOAD_TOKEN;
-      if (token && req.headers["x-upload-token"] !== token) {
-        return res.status(403).json({ error: "Forbidden" });
-      }
-      const subject = String(req.query.subject || "");
-      const academicYear = String(req.query.academicYear || "");
-      const term = String(req.query.term || "");
-      if (!subject || !academicYear || !term)
-        return res
-          .status(400)
-          .json({ error: "Missing subject, academicYear or term" });
-      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-      const safe = await scanFileForVirus(req.file.path);
-      if (!safe)
-        return res.status(400).json({ error: "File failed security scan" });
-
-      await audit("assessment_upload_attempt", {
-        subject,
-        academicYear,
-        term,
-        filename: req.file.originalname,
-        size: req.file.size,
-      });
-      const { rows, errors } = await parseAssessmentSheet(req.file.path);
-      await audit("assessment_upload_parsed", {
-        subject,
-        academicYear,
-        term,
-        rows: rows.length,
-        errorsCount: errors.length,
-        errors: errors.slice(0, 10),
-      });
-      if (rows.length === 0)
-        return res.status(400).json({ error: "No valid rows", errors });
-
-      try {
-        if (supabaseAdmin) {
-          await saveMarksSupabase(subject, academicYear, term, rows);
-          await audit("assessment_upload_saved", {
-            subject,
-            academicYear,
-            term,
-            processed: rows.length,
-          });
-          res.json({ ok: true, processed: rows.length, errors });
-        } else {
-          const conn = await pool.getConnection();
-          try {
-            await saveMarksTransaction(conn, subject, academicYear, term, rows);
-            await audit("assessment_upload_saved_db", {
-              subject,
-              academicYear,
-              term,
-              processed: rows.length,
-            });
-            res.json({ ok: true, processed: rows.length, errors });
-          } catch (dbErr) {
-            const emsg = (dbErr as Error).message || "Upload failed";
-            if (emsg.toLowerCase().includes("subject not found")) {
-              await audit("assessment_upload_failed", {
-                subject,
-                academicYear,
-                term,
-                error: "Subject not found",
-              });
-              return res.status(400).json({
-                error:
-                  "Selected subject is not configured. Please choose a valid subject.",
-              });
-            }
-            await audit("assessment_upload_failed", {
-              subject,
-              academicYear,
-              term,
-              error: emsg,
-            });
-            return res.status(500).json({ error: emsg });
-          } finally {
-            conn.release();
-          }
-        }
-      } catch (err) {
-        const msg = (err as Error).message || "Upload failed";
-        if (msg.toLowerCase().includes("subject not found")) {
-          await audit("assessment_upload_failed", {
-            subject,
-            academicYear,
-            term,
-            error: "Subject not found",
-          });
-          return res.status(400).json({
-            error:
-              "Selected subject is not configured. Please choose a valid subject.",
-          });
-        }
-        await audit("assessment_upload_failed", {
-          subject,
-          academicYear,
-          term,
-          error: msg,
-        });
-        return res.status(500).json({ error: msg });
-      }
-    } catch (e) {
-      const err = e as Error;
-      await audit("assessment_upload_exception", {
-        error: err.message || "Upload failed",
-      });
-      res.status(500).json({ error: err.message || "Upload failed" });
-    }
-  }
-);
+// app.post("/api/assessments/upload", ...) removed
 
 app.post("/api/admin/clean-master-db", async (req: Request, res: Response) => {
   try {
@@ -290,70 +155,75 @@ app.post("/api/admin/clean-master-db", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Confirmation required" });
     }
 
-    const conn = await pool.getConnection();
+    const client = await pool.connect();
     try {
-      await conn.beginTransaction();
+      await client.query("BEGIN");
 
-      await conn.query("DELETE FROM assessments");
-      await conn.query("DELETE FROM audit_logs");
-      await conn.query("DELETE FROM academic_sessions");
-      await conn.query("DELETE FROM students");
+      await client.query("DELETE FROM assessments");
+      await client.query("DELETE FROM audit_logs");
+      await client.query("DELETE FROM academic_sessions");
+      await client.query("DELETE FROM students");
 
-      const [sCountRows] = await conn.query(
+      const { rows: sCountRows } = await client.query(
         "SELECT COUNT(*) AS c FROM students"
       );
-      const [aCountRows] = await conn.query(
+      const { rows: aCountRows } = await client.query(
         "SELECT COUNT(*) AS c FROM assessments"
       );
-      const [sessCountRows] = await conn.query(
+      const { rows: sessCountRows } = await client.query(
         "SELECT COUNT(*) AS c FROM academic_sessions"
       );
-      const sCount = (sCountRows as Array<{ c: number }>)[0]?.c ?? 0;
-      const aCount = (aCountRows as Array<{ c: number }>)[0]?.c ?? 0;
-      const sessCount = (sessCountRows as Array<{ c: number }>)[0]?.c ?? 0;
+      const sCount = parseInt(sCountRows[0]?.c || "0", 10);
+      const aCount = parseInt(aCountRows[0]?.c || "0", 10);
+      const sessCount = parseInt(sessCountRows[0]?.c || "0", 10);
 
       if (sCount !== 0 || aCount !== 0 || sessCount !== 0) {
         throw new Error("Cleanup verification failed: expected zero counts");
       }
 
-      await conn.commit();
+      await client.query("COMMIT");
 
-      await conn.query("ALTER TABLE assessments AUTO_INCREMENT = 1");
-      await conn.query("ALTER TABLE audit_logs AUTO_INCREMENT = 1");
-      await conn.query("ALTER TABLE academic_sessions AUTO_INCREMENT = 1");
+      // Postgres sequences reset
+      await client.query(
+        "ALTER SEQUENCE assessments_assessment_id_seq RESTART WITH 1"
+      );
+      await client.query("ALTER SEQUENCE audit_logs_log_id_seq RESTART WITH 1");
+      await client.query(
+        "ALTER SEQUENCE academic_sessions_session_id_seq RESTART WITH 1"
+      );
 
-      const [finalStudents] = await conn.query(
+      const { rows: finalStudents } = await client.query(
         "SELECT COUNT(*) AS c FROM students"
       );
-      const [finalAssessments] = await conn.query(
+      const { rows: finalAssessments } = await client.query(
         "SELECT COUNT(*) AS c FROM assessments"
       );
-      const [finalSessions] = await conn.query(
+      const { rows: finalSessions } = await client.query(
         "SELECT COUNT(*) AS c FROM academic_sessions"
       );
-      const [finalAudit] = await conn.query(
+      const { rows: finalAudit } = await client.query(
         "SELECT COUNT(*) AS c FROM audit_logs"
       );
 
       res.json({
         ok: true,
         counts: {
-          students: (finalStudents as Array<{ c: number }>)[0]?.c ?? 0,
-          assessments: (finalAssessments as Array<{ c: number }>)[0]?.c ?? 0,
-          academic_sessions: (finalSessions as Array<{ c: number }>)[0]?.c ?? 0,
-          audit_logs: (finalAudit as Array<{ c: number }>)[0]?.c ?? 0,
+          students: parseInt(finalStudents[0]?.c || "0", 10),
+          assessments: parseInt(finalAssessments[0]?.c || "0", 10),
+          academic_sessions: parseInt(finalSessions[0]?.c || "0", 10),
+          audit_logs: parseInt(finalAudit[0]?.c || "0", 10),
         },
       });
     } catch (err) {
       try {
-        await conn.rollback();
+        await client.query("ROLLBACK");
       } catch (_e) {
         void _e;
       }
       const msg = (err as Error).message || "Cleanup failed";
       res.status(500).json({ error: msg });
     } finally {
-      conn.release();
+      client.release();
     }
   } catch (e) {
     const err = e as Error;
@@ -374,12 +244,12 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
     if (!subject || !className || !academicYear || !term)
       return res.status(400).json({ error: "Missing required parameters" });
     const format = String(req.query.format || "xlsx").toLowerCase();
-    const conn = await pool.getConnection();
+    const client = await pool.connect();
     try {
       const t0 = Date.now();
       if (format === "csv") {
         const csv = await buildAssessmentTemplateCSV(
-          conn,
+          client,
           subject,
           className,
           academicYear,
@@ -394,7 +264,7 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
         res.send(csv);
       } else {
         let buf = await buildAssessmentTemplateXLSX(
-          conn,
+          client,
           subject,
           className,
           academicYear,
@@ -403,7 +273,7 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
         const valid = validateWorkbook(buf);
         if (!valid) {
           buf = await buildAssessmentTemplate(
-            conn,
+            client,
             subject,
             className,
             academicYear,
@@ -437,7 +307,7 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
         }
       }
     } finally {
-      conn.release();
+      client.release();
     }
   } catch (e) {
     const err = e as Error;
@@ -669,12 +539,12 @@ app.get(
       if (!subject || !className || !academicYear || !term)
         return res.status(400).json({ error: "Missing required parameters" });
       const format = String(req.query.format || "xlsx").toLowerCase();
-      const conn = await pool.getConnection();
+      const client = await pool.connect();
       try {
         let buf: Buffer;
         if (format === "csv") {
           const csv = await buildAssessmentTemplateCSV(
-            conn,
+            client,
             subject,
             className,
             academicYear,
@@ -689,7 +559,7 @@ app.get(
           return res.json({ ok: true, path: outPath });
         } else {
           buf = await buildAssessmentTemplateXLSX(
-            conn,
+            client,
             subject,
             className,
             academicYear,
@@ -698,7 +568,7 @@ app.get(
           let validated = validateWorkbook(buf);
           if (!validated) {
             buf = await buildAssessmentTemplate(
-              conn,
+              client,
               subject,
               className,
               academicYear,
@@ -722,7 +592,7 @@ app.get(
           return res.json({ ok: true, path: outPath, validated });
         }
       } finally {
-        conn.release();
+        client.release();
       }
     } catch (e) {
       const err = e as Error;
@@ -731,24 +601,6 @@ app.get(
   }
 );
 
-const port = Number(process.env.PORT || 3001);
-// Fallback to index.html for client-side routing
-app.get(/.*/, (_req: Request, res: Response) => {
-  try {
-    res.sendFile(path.join(process.cwd(), "dist", "index.html"));
-  } catch {
-    res.status(404).send("Not Found");
-  }
-});
-app.listen(port, () => {
-  console.log(`[server] listening on http://localhost:${port}`);
-  setInterval(
-    () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
-    60 * 60 * 1000
-  );
-});
-
-export default app;
 app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
   try {
     const subject = String(req.query.subject || "");
@@ -758,77 +610,63 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
     if (!subject || !className || !academicYear || !term) {
       return res.status(400).json({ error: "Missing required parameters" });
     }
-    if (supabaseAdmin) {
-      try {
-        const rows = await getSubjectSheetSupabase(
-          className,
-          subject,
-          academicYear,
-          term
-        );
-        res.json({ rows });
-      } catch {
-        res.json({ rows: [] });
+
+    const client = await pool.connect();
+    try {
+      const { rows: subRows } = await client.query(
+        "SELECT subject_id, subject_name FROM subjects WHERE subject_name=$1 LIMIT 1",
+        [subject]
+      );
+      const sArr = subRows as Array<{
+        subject_id: number;
+        subject_name: string;
+      }>;
+      if (!sArr.length) {
+        return res.status(400).json({
+          error:
+            "Selected subject is not configured. Please choose a valid subject.",
+        });
       }
-    } else {
-      const conn = await pool.getConnection();
-      try {
-        const [subRows] = await conn.query(
-          "SELECT subject_id, subject_name FROM subjects WHERE subject_name=? LIMIT 1",
-          [subject]
-        );
-        const sArr = subRows as Array<{
-          subject_id: number;
-          subject_name: string;
-        }>;
-        if (!sArr.length) {
-          return res.status(400).json({
-            error:
-              "Selected subject is not configured. Please choose a valid subject.",
-          });
-        }
-        const subject_id = sArr[0].subject_id;
-        const [sessRows] = await conn.query(
-          "SELECT session_id FROM academic_sessions WHERE academic_year=? AND term=? LIMIT 1",
+      const subject_id = sArr[0].subject_id;
+      const { rows: sessRows } = await client.query(
+        "SELECT session_id FROM academic_sessions WHERE academic_year=$1 AND term=$2 LIMIT 1",
+        [academicYear, term]
+      );
+      let session_id = sessRows[0]?.session_id;
+      if (!session_id) {
+        const { rows: ins } = await client.query(
+          "INSERT INTO academic_sessions (academic_year, term, is_active) VALUES ($1, $2, FALSE) RETURNING session_id",
           [academicYear, term]
         );
-        let session_id = (sessRows as Array<{ session_id: number }>)[0]
-          ?.session_id;
-        if (!session_id) {
-          const [ins] = await conn.query(
-            "INSERT INTO academic_sessions (academic_year, term, is_active) VALUES (?, ?, FALSE)",
-            [academicYear, term]
-          );
-          session_id = (ins as { insertId: number }).insertId;
-        }
-        const [rows] = await conn.query(
-          `SELECT s.student_id,
-                  s.surname,
-                  s.first_name,
-                  c.class_name,
-                  ? AS subject_name,
-                  COALESCE(a.cat1_score, 0) AS cat1_score,
-                  COALESCE(a.cat2_score, 0) AS cat2_score,
-                  COALESCE(a.cat3_score, 0) AS cat3_score,
-                  COALESCE(a.cat4_score, 0) AS cat4_score,
-                  COALESCE(a.group_work_score, 0) AS group_work_score,
-                  COALESCE(a.project_work_score, 0) AS project_work_score,
-                  COALESCE(a.exam_score, 0) AS exam_score,
-                  (COALESCE(a.cat1_score,0)+COALESCE(a.cat2_score,0)+COALESCE(a.cat3_score,0)+COALESCE(a.cat4_score,0)+COALESCE(a.group_work_score,0)+COALESCE(a.project_work_score,0)) AS raw_sba_total
-           FROM students s
-           JOIN classes c ON s.current_class_id = c.class_id
-           LEFT JOIN assessments a
-             ON a.student_id = s.student_id
-            AND a.subject_id = ?
-            AND a.session_id = ?
-           WHERE c.class_name = ?
-           ORDER BY s.surname, s.first_name`,
-          [subject, subject_id, session_id, className]
-        );
-        res.json({ rows: rows as unknown[] });
-      } finally {
-        conn.release();
+        session_id = ins[0].session_id;
       }
+      const { rows } = await client.query(
+        `SELECT s.student_id,
+                s.surname,
+                s.first_name,
+                c.class_name,
+                $1 AS subject_name,
+                COALESCE(a.cat1_score, 0) AS cat1_score,
+                COALESCE(a.cat2_score, 0) AS cat2_score,
+                COALESCE(a.cat3_score, 0) AS cat3_score,
+                COALESCE(a.cat4_score, 0) AS cat4_score,
+                COALESCE(a.group_work_score, 0) AS group_work_score,
+                COALESCE(a.project_work_score, 0) AS project_work_score,
+                COALESCE(a.exam_score, 0) AS exam_score,
+                (COALESCE(a.cat1_score,0)+COALESCE(a.cat2_score,0)+COALESCE(a.cat3_score,0)+COALESCE(a.cat4_score,0)+COALESCE(a.group_work_score,0)+COALESCE(a.project_work_score,0)) AS raw_sba_total
+         FROM students s
+         JOIN classes c ON s.current_class_id = c.class_id
+         LEFT JOIN assessments a
+           ON a.student_id = s.student_id
+          AND a.subject_id = $2
+          AND a.session_id = $3
+         WHERE c.class_name = $4
+         ORDER BY s.surname, s.first_name`,
+        [subject, subject_id, session_id, className]
+      );
+      res.json({ rows });
+    } finally {
+      client.release();
     }
   } catch (e) {
     const err = e as Error;
@@ -845,3 +683,35 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
     res.status(code).json({ error: msg });
   }
 });
+
+const port = Number(process.env.PORT || 3001);
+// Fallback to index.html for client-side routing
+app.get(/.*/, (_req: Request, res: Response) => {
+  try {
+    res.sendFile(path.join(process.cwd(), "dist", "index.html"));
+  } catch {
+    res.status(404).send("Not Found");
+  }
+});
+app.listen(port, async () => {
+  const conn =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.NEON_DATABASE_URL;
+  if (conn) {
+    const host = conn.includes("@")
+      ? conn.split("@")[1].split("/")[0]
+      : "configured";
+    console.log("Database configured:", host);
+  } else {
+    console.warn("No database connection string found.");
+  }
+  console.log(`[server] listening on http://localhost:${port}`);
+  await seedAuth();
+  setInterval(
+    () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
+    60 * 60 * 1000
+  );
+});
+
+export default app;

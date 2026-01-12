@@ -1,9 +1,6 @@
-import { put } from "@vercel/blob";
-import fs from "fs";
-import path from "path";
+import { pool } from "../lib/db";
 import { upsertStudent, deleteStudent, getStudent } from "./blobdb";
 
-type Access = "public";
 type ChangeType = "upsert" | "delete";
 type Change = {
   id: string;
@@ -21,100 +18,55 @@ type ChangeIndexItem = {
   url?: string;
 };
 
-let recentChanges: ChangeIndexItem[] = [];
-
-const baseDir = path.join(process.cwd(), "uploads", "blobdb");
-fs.mkdirSync(baseDir, { recursive: true });
-
-function hasBlobToken(): boolean {
-  return Boolean(
-    process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_RW_TOKEN
-  );
-}
-
-function getToken(): string | undefined {
-  return process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_BLOB_RW_TOKEN;
-}
-
-function localPath(key: string): string {
-  return path.join(baseDir, key);
-}
-
-async function writeJSON(
-  key: string,
-  data: unknown,
-  access: Access = "public"
-): Promise<{ url: string }> {
-  if (hasBlobToken()) {
-    const token = getToken() as string;
-    const body = Buffer.from(JSON.stringify(data));
-    const { url } = await put(key, body, {
-      access,
-      token,
-      contentType: "application/json",
-    });
-    return { url };
-  }
-  const p = localPath(key);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(data));
-  return { url: p };
-}
-
-function readLocalJSON<T>(key: string): T | null {
-  try {
-    const p = localPath(key);
-    const raw = fs.readFileSync(p, { encoding: "utf8" });
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-const CHANGES_INDEX_KEY = "blobdb/index/changes.json";
-const CHECKPOINT_KEY = "blobdb/index/checkpoint.json";
-
 export async function getCheckpoint(): Promise<number> {
-  if (!hasBlobToken()) {
-    const val = readLocalJSON<{ last: number }>(CHECKPOINT_KEY);
-    return val?.last || 0;
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      "SELECT MAX(timestamp) as last FROM sync_changes"
+    );
+    return Number(rows[0]?.last || 0);
+  } finally {
+    client.release();
   }
-  const val = readLocalJSON<{ last: number }>(CHECKPOINT_KEY);
-  return val?.last || 0;
-}
-
-async function setCheckpoint(ts: number): Promise<void> {
-  await writeJSON(CHECKPOINT_KEY, { last: ts });
 }
 
 export async function listChanges(
   since: number,
   limit = 1000
 ): Promise<ChangeIndexItem[]> {
-  const idx = readLocalJSON<{ items: ChangeIndexItem[] }>(CHANGES_INDEX_KEY);
-  const fileItems = idx?.items || [];
-  const merged = [...fileItems, ...recentChanges];
-  const byKey = new Map<string, ChangeIndexItem>();
-  for (const it of merged) {
-    const key = `${it.id}:${it.ts}:${it.type}`;
-    byKey.set(key, it);
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query(
+      "SELECT entity_id as id, change_type as type, timestamp as ts FROM sync_changes WHERE timestamp > $1 ORDER BY timestamp ASC LIMIT $2",
+      [since, limit]
+    );
+    // In SQL mode, we don't really have "url" for JSON blob anymore,
+    // but we can construct one if the client relies on it to fetch individual docs.
+    // However, the client pull logic seems to rely on ID.
+    return rows.map((r) => ({
+      id: r.id,
+      type: r.type,
+      ts: Number(r.ts),
+      url: `/api/blobdb/students/${r.id}`, // Virtual URL
+    }));
+  } finally {
+    client.release();
   }
-  const uniq = Array.from(byKey.values());
-  return uniq
-    .filter((i) => i.ts > since)
-    .sort((a, b) => a.ts - b.ts)
-    .slice(0, limit);
 }
 
-async function appendChangeIndex(item: ChangeIndexItem): Promise<void> {
-  const idx = readLocalJSON<{ items: ChangeIndexItem[] }>(
-    CHANGES_INDEX_KEY
-  ) || { items: [] };
-  idx.items.push(item);
-  await writeJSON(CHANGES_INDEX_KEY, idx);
-  await setCheckpoint(item.ts);
-  recentChanges.push(item);
-  if (recentChanges.length > 200) recentChanges = recentChanges.slice(-200);
+async function appendChangeIndex(
+  item: ChangeIndexItem,
+  clientId: string
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(
+      "INSERT INTO sync_changes (entity_id, change_type, timestamp, client_id) VALUES ($1, $2, $3, $4)",
+      [item.id, item.type, item.ts, clientId]
+    );
+  } finally {
+    client.release();
+  }
 }
 
 export async function applyChanges(changes: Change[]): Promise<{
@@ -132,6 +84,7 @@ export async function applyChanges(changes: Change[]): Promise<{
     latestVersion?: number;
     latestDoc?: Record<string, unknown>;
   }> = [];
+
   for (const c of changes) {
     const ts = c.timestamp || Date.now();
     console.info("[sync_apply]", {
@@ -139,46 +92,58 @@ export async function applyChanges(changes: Change[]): Promise<{
       clientId: c.clientId,
       ts,
     });
-    if (c.type === "upsert" && c.doc) {
-      const doc = c.doc as Record<string, unknown>;
-      const id = String(doc.id || c.id);
-      const version = Number(doc.version || c.version || 1);
-      const existing = await getStudent(id);
-      const existingVersion = existing
-        ? Number((existing as Record<string, unknown>).version || 0)
-        : 0;
-      if (existing && version <= existingVersion) {
-        results.push({
+
+    try {
+      if (c.type === "upsert" && c.doc) {
+        const doc = c.doc as Record<string, unknown>;
+        const id = String(doc.id || c.id);
+        const version = Number(doc.version || c.version || 1);
+
+        const existing = await getStudent(id);
+        const existingVersion = existing ? existing.version : 0;
+
+        if (existing && version <= existingVersion) {
+          results.push({
+            id,
+            status: "conflict",
+            latestVersion: existingVersion,
+            latestDoc: existing as unknown as Record<string, unknown>,
+          });
+          continue;
+        }
+
+        const res = await upsertStudent({
           id,
-          status: "conflict",
-          latestVersion: existingVersion,
-          latestDoc: existing as Record<string, unknown>,
+          surname: String(doc.surname || ""),
+          firstName: String(doc.firstName || ""),
+          middleName: String(doc.middleName || ""),
+          gender: String(doc.gender || "Other"),
+          dob: String(doc.dob || ""),
+          guardianContact: String(doc.guardianContact || ""),
+          class: String(doc.class || ""),
+          status: String(doc.status || "Active"),
+          version,
         });
-        continue;
+
+        await appendChangeIndex(
+          { ts, id, type: "upsert", url: res.url },
+          c.clientId
+        );
+        results.push({ id, status: "ok" });
+      } else if (c.type === "delete") {
+        const id = c.id;
+        await deleteStudent(id);
+        await appendChangeIndex({ ts, id, type: "delete" }, c.clientId);
+        results.push({ id, status: "ok" });
+      } else {
+        results.push({ id: c.id, status: "skipped" });
       }
-      const res = await upsertStudent({
-        id,
-        surname: String(doc.surname || ""),
-        firstName: String(doc.firstName || ""),
-        middleName: String(doc.middleName || ""),
-        gender: String(doc.gender || "Other"),
-        dob: String(doc.dob || ""),
-        guardianContact: String(doc.guardianContact || ""),
-        class: String(doc.class || ""),
-        status: String(doc.status || "Active"),
-        version,
-      });
-      await appendChangeIndex({ ts, id, type: "upsert", url: res.url });
-      results.push({ id, status: "ok" });
-    } else if (c.type === "delete") {
-      const id = c.id;
-      await deleteStudent(id);
-      await appendChangeIndex({ ts, id, type: "delete" });
-      results.push({ id, status: "ok" });
-    } else {
-      results.push({ id: c.id, status: "skipped" });
+    } catch (e) {
+      console.error("[sync_apply_error]", e);
+      results.push({ id: c.id, status: "error" });
     }
   }
+
   const checkpoint = await getCheckpoint();
   return { results, checkpoint };
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { buildImportedStudents, Student } from "../lib/masterdbImport";
 
 describe("MasterDB import validation", () => {
-  const selectedClass = "JHS 1";
+  const selectedClass = "JHS 1(A)";
   const academicYear = "2025/2026";
 
   it("rejects rows missing required names", () => {

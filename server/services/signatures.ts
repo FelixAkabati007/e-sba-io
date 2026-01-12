@@ -3,7 +3,6 @@ import path from "path";
 import crypto from "crypto";
 import { imageSize } from "image-size";
 import { pool } from "../lib/db";
-import type { RowDataPacket } from "mysql2";
 
 const baseDir = path.join(process.cwd(), "uploads", "signatures");
 fs.mkdirSync(baseDir, { recursive: true });
@@ -42,19 +41,20 @@ function writeMeta(list: SignatureMeta[]) {
 }
 
 async function ensureTable(): Promise<void> {
-  const sql = `CREATE TABLE IF NOT EXISTS signatures (
-    id VARCHAR(64) PRIMARY KEY,
-    filename VARCHAR(255) NOT NULL,
-    url VARCHAR(255) NOT NULL,
-    academicYear VARCHAR(32) NOT NULL,
-    term VARCHAR(32) NOT NULL,
-    uploadedAt BIGINT NOT NULL,
-    width INT NULL,
-    height INT NULL,
-    enabled TINYINT(1) NOT NULL DEFAULT 1,
-    version INT NOT NULL
-  )`;
-  await pool.query(sql);
+  await pool.query(
+    `CREATE TABLE IF NOT EXISTS signatures (
+      id VARCHAR(64) PRIMARY KEY,
+      filename VARCHAR(255) NOT NULL,
+      url VARCHAR(255) NOT NULL,
+      academicYear VARCHAR(32) NOT NULL,
+      term VARCHAR(32) NOT NULL,
+      uploadedAt BIGINT NOT NULL,
+      width INT NULL,
+      height INT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      version INT NOT NULL
+    )`
+  );
 }
 
 async function nextVersion(
@@ -62,12 +62,11 @@ async function nextVersion(
   term: string
 ): Promise<number> {
   await ensureTable();
-  const [rows] = await pool.query<RowDataPacket[]>(
-    "SELECT COALESCE(MAX(version),0) AS v FROM signatures WHERE academicYear=? AND term=?",
+  const { rows } = await pool.query<{ v: number }>(
+    "SELECT COALESCE(MAX(version),0) AS v FROM signatures WHERE academicYear=$1 AND term=$2",
     [academicYear, term]
   );
-  const r = (rows as Array<{ v: number }>)[0];
-  const v = r && typeof r.v === "number" ? r.v : 0;
+  const v = rows[0]?.v ?? 0;
   return v + 1;
 }
 
@@ -109,7 +108,7 @@ export async function storeSignature(
     meta.version = version;
     await ensureTable();
     await pool.query(
-      "INSERT INTO signatures (id, filename, url, academicYear, term, uploadedAt, width, height, enabled, version) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO signatures (id, filename, url, academicYear, term, uploadedAt, width, height, enabled, version) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
       [
         meta.id,
         meta.filename,
@@ -119,7 +118,7 @@ export async function storeSignature(
         meta.uploadedAt,
         meta.width ?? null,
         meta.height ?? null,
-        meta.enabled ? 1 : 0,
+        meta.enabled,
         meta.version,
       ]
     );
@@ -142,24 +141,23 @@ export async function listSignatures(
 ): Promise<SignatureMeta[]> {
   try {
     await ensureTable();
-    const params: string[] = [];
+    const params: Array<string> = [];
     const where: string[] = [];
     if (academicYear) {
-      where.push("academicYear=?");
+      where.push("academicYear=$" + (params.length + 1));
       params.push(academicYear);
     }
     if (term) {
-      where.push("term=?");
+      where.push("term=$" + (params.length + 1));
       params.push(term);
     }
     const sql = `SELECT * FROM signatures${
       where.length ? " WHERE " + where.join(" AND ") : ""
     } ORDER BY uploadedAt DESC`;
-    const [rows] = await pool.query<RowDataPacket[]>(sql, params);
-    const items = rows as unknown as SignatureMeta[];
-    return items.map((r) => ({
+    const { rows } = await pool.query(sql, params);
+    return (rows as unknown as SignatureMeta[]).map((r) => ({
       ...r,
-      enabled: !!(r as unknown as { enabled: number }).enabled,
+      enabled: !!(r as unknown as { enabled: boolean }).enabled,
     }));
   } catch {
     const list = readMeta();
@@ -177,18 +175,17 @@ export async function setSignatureEnabled(
 ): Promise<SignatureMeta | undefined> {
   try {
     await ensureTable();
-    await pool.query("UPDATE signatures SET enabled=? WHERE id=?", [
-      enabled ? 1 : 0,
+    await pool.query("UPDATE signatures SET enabled=$1 WHERE id=$2", [
+      enabled,
       id,
     ]);
-    const [rows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM signatures WHERE id=?",
+    const { rows } = await pool.query<SignatureMeta[]>(
+      "SELECT * FROM signatures WHERE id=$1",
       [id]
     );
-    const items = rows as unknown as SignatureMeta[];
-    if (!items.length) return undefined;
-    const meta = items[0];
-    meta.enabled = !!(meta as unknown as { enabled: number }).enabled;
+    if (!rows.length) return undefined;
+    const meta = rows[0] as unknown as SignatureMeta;
+    meta.enabled = !!(meta as unknown as { enabled: boolean }).enabled;
     return meta;
   } catch {
     const list = readMeta();
@@ -206,14 +203,13 @@ export async function getCurrentSignature(
 ): Promise<SignatureMeta | undefined> {
   try {
     await ensureTable();
-    const [rows] = await pool.query<RowDataPacket[]>(
-      "SELECT * FROM signatures WHERE academicYear=? AND term=? AND enabled=1 ORDER BY uploadedAt DESC LIMIT 1",
+    const { rows } = await pool.query<SignatureMeta[]>(
+      "SELECT * FROM signatures WHERE academicYear=$1 AND term=$2 AND enabled=true ORDER BY uploadedAt DESC LIMIT 1",
       [academicYear, term]
     );
-    const items = rows as unknown as SignatureMeta[];
-    if (!items.length) return undefined;
-    const meta = items[0];
-    meta.enabled = !!(meta as unknown as { enabled: number }).enabled;
+    if (!rows.length) return undefined;
+    const meta = rows[0] as unknown as SignatureMeta;
+    meta.enabled = !!(meta as unknown as { enabled: boolean }).enabled;
     return meta;
   } catch {
     const list = await listSignatures(academicYear, term);

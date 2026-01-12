@@ -1,27 +1,26 @@
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
-import type { PoolConnection } from "mysql2/promise";
+import type { PoolClient } from "pg";
 import type { Worksheet } from "exceljs";
 
 export async function buildAssessmentTemplate(
-  conn: PoolConnection,
+  client: PoolClient,
   subjectName: string,
   className: string,
   academicYear: string,
   term: string
 ): Promise<Buffer> {
-  const [subRows] = await conn.query(
-    "SELECT subject_id FROM subjects WHERE subject_name=? LIMIT 1",
+  const { rows: subRows } = await client.query(
+    "SELECT subject_id FROM subjects WHERE subject_name=$1 LIMIT 1",
     [subjectName]
   );
-  const subs = subRows as Array<{ subject_id: number }>;
-  if (subs.length === 0) throw new Error("Subject not found");
+  if (subRows.length === 0) throw new Error("Subject not found");
 
-  const [stuRows] = await conn.query(
+  const { rows: stuRows } = await client.query(
     `SELECT s.student_id, s.surname, s.first_name
      FROM students s
      JOIN classes c ON s.current_class_id = c.class_id
-     WHERE c.class_name = ?
+     WHERE c.class_name = $1
      ORDER BY s.surname, s.first_name`,
     [className]
   );
@@ -103,17 +102,17 @@ function csvEscape(v: string): string {
 }
 
 export async function buildAssessmentTemplateCSV(
-  conn: PoolConnection,
+  client: PoolClient,
   subjectName: string,
   className: string,
   academicYear: string,
   term: string
 ): Promise<string> {
-  const [stuRows] = await conn.query(
+  const { rows: stuRows } = await client.query(
     `SELECT s.student_id, s.surname, s.first_name
      FROM students s
      JOIN classes c ON s.current_class_id = c.class_id
-     WHERE c.class_name = ?
+     WHERE c.class_name = $1
      ORDER BY s.surname, s.first_name`,
     [className]
   );
@@ -179,17 +178,17 @@ export function validateWorkbook(buf: Buffer): boolean {
 }
 
 export async function buildAssessmentTemplateXLSX(
-  conn: PoolConnection,
+  client: PoolClient,
   subjectName: string,
   className: string,
   academicYear: string,
   term: string
 ): Promise<Buffer> {
-  const [stuRows] = await conn.query(
+  const { rows: stuRows } = await client.query(
     `SELECT s.student_id, s.surname, s.first_name
      FROM students s
      JOIN classes c ON s.current_class_id = c.class_id
-     WHERE c.class_name = ?
+     WHERE c.class_name = $1
      ORDER BY s.surname, s.first_name`,
     [className]
   );

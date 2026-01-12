@@ -1,6 +1,5 @@
 import * as XLSX from "xlsx";
-import type { PoolConnection } from "mysql2/promise";
-import type { ResultSetHeader } from "mysql2";
+import type { PoolClient } from "pg";
 
 export type Row = {
   student_id: string;
@@ -98,47 +97,53 @@ export async function parseAssessmentSheet(
   return { rows, errors };
 }
 
-async function ensureSession(
-  conn: PoolConnection,
+export async function ensureSession(
+  client: PoolClient,
   academicYear: string,
   term: string
 ): Promise<number> {
-  const [rows] = await conn.query(
-    "SELECT session_id FROM academic_sessions WHERE academic_year=? AND term=? LIMIT 1",
+  const { rows } = await client.query(
+    "SELECT session_id FROM academic_sessions WHERE academic_year=$1 AND term=$2 LIMIT 1",
     [academicYear, term]
   );
-  const arr = rows as Array<{ session_id: number }>;
-  if (arr.length) return arr[0].session_id;
-  const [res] = await conn.query<ResultSetHeader>(
-    "INSERT INTO academic_sessions (academic_year, term, is_active) VALUES (?, ?, FALSE)",
+  if (rows.length) return rows[0].session_id;
+  const { rows: insRows } = await client.query(
+    "INSERT INTO academic_sessions (academic_year, term, is_active) VALUES ($1, $2, FALSE) RETURNING session_id",
     [academicYear, term]
   );
-  return res.insertId as number;
+  return insRows[0].session_id;
 }
 
 export async function saveMarksTransaction(
-  conn: PoolConnection,
+  client: PoolClient,
   subjectName: string,
   academicYear: string,
   term: string,
   rows: Row[]
 ): Promise<void> {
-  await conn.beginTransaction();
+  await client.query("BEGIN");
   try {
-    const [subRows] = await conn.query(
-      "SELECT subject_id FROM subjects WHERE subject_name=? LIMIT 1",
+    const { rows: subRows } = await client.query(
+      "SELECT subject_id FROM subjects WHERE subject_name=$1 LIMIT 1",
       [subjectName]
     );
-    const sArr = subRows as Array<{ subject_id: number }>;
-    if (!sArr.length) throw new Error("Subject not found");
-    const subject_id = sArr[0].subject_id;
-    const session_id = await ensureSession(conn, academicYear, term);
+    if (!subRows.length) throw new Error("Subject not found");
+    const subject_id = subRows[0].subject_id;
+    const session_id = await ensureSession(client, academicYear, term);
 
     for (const r of rows) {
-      await conn.query(
+      await client.query(
         `INSERT INTO assessments (student_id, subject_id, session_id, cat1_score, cat2_score, cat3_score, cat4_score, group_work_score, project_work_score, exam_score)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE cat1_score=VALUES(cat1_score), cat2_score=VALUES(cat2_score), cat3_score=VALUES(cat3_score), cat4_score=VALUES(cat4_score), group_work_score=VALUES(group_work_score), project_work_score=VALUES(project_work_score), exam_score=VALUES(exam_score)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (student_id, subject_id, session_id) DO UPDATE SET
+           cat1_score=EXCLUDED.cat1_score,
+           cat2_score=EXCLUDED.cat2_score,
+           cat3_score=EXCLUDED.cat3_score,
+           cat4_score=EXCLUDED.cat4_score,
+           group_work_score=EXCLUDED.group_work_score,
+           project_work_score=EXCLUDED.project_work_score,
+           exam_score=EXCLUDED.exam_score,
+           updated_at=NOW()`,
         [
           r.student_id,
           subject_id,
@@ -153,9 +158,38 @@ export async function saveMarksTransaction(
         ]
       );
     }
-    await conn.commit();
+    await client.query("COMMIT");
   } catch (e) {
-    await conn.rollback();
+    await client.query("ROLLBACK");
     throw e;
   }
+}
+
+export async function getSubjectMarks(
+  client: PoolClient,
+  className: string,
+  subjectName: string,
+  academicYear: string,
+  term: string
+): Promise<Row[]> {
+  // First ensure session exists to get ID (or just get it)
+  const sessionId = await ensureSession(client, academicYear, term);
+
+  // Use the stored procedure or a direct query
+  // The SP sp_get_subject_sheet returns what we need
+  const { rows } = await client.query(
+    "SELECT * FROM sp_get_subject_sheet($1, $2, $3)",
+    [className, subjectName, sessionId]
+  );
+
+  return rows.map((r) => ({
+    student_id: r.student_id,
+    cat1: Number(r.cat1_score || 0),
+    cat2: Number(r.cat2_score || 0),
+    cat3: Number(r.cat3_score || 0),
+    cat4: Number(r.cat4_score || 0),
+    group: Number(r.group_work_score || 0),
+    project: Number(r.project_work_score || 0),
+    exam: Number(r.exam_score || 0),
+  }));
 }

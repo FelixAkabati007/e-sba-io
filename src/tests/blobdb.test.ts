@@ -13,7 +13,7 @@ const makeStudent = (id: string, size = 0) => ({
   gender: "Other",
   dob: "2000-01-01",
   guardianContact: "000",
-  class: "JHS 1",
+  class: "JHS 1(A)",
   status: "Active",
   version: 1,
 });

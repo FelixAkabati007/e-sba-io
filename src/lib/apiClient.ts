@@ -1,5 +1,4 @@
 import { logger } from "./logger";
-import { kvGet } from "./storage";
 import type {
   UploadAssessmentQuery,
   UploadAssessmentResponse,
@@ -8,7 +7,21 @@ import type {
   ApiError,
 } from "./apiTypes";
 
-type HttpMethod = "GET" | "POST";
+type HttpMethod = "GET" | "POST" | "DELETE";
+
+type Gender = "Male" | "Female" | "Other";
+
+export type StudentRecord = {
+  id: string;
+  surname: string;
+  firstName: string;
+  middleName: string;
+  gender: Gender;
+  dob: string;
+  guardianContact: string;
+  class: string;
+  status: "Active" | "Withdrawn" | "Inactive";
+};
 
 function baseUrl(): string {
   const env =
@@ -19,9 +32,20 @@ function baseUrl(): string {
 
 function authHeader(): Record<string, string> {
   try {
-    const token = kvGet<string>("local", "API_AUTH_TOKEN") || undefined;
-    const up = kvGet<string>("local", "UPLOAD_TOKEN") || undefined;
-    const down = kvGet<string>("local", "DOWNLOAD_TOKEN") || undefined;
+    const token =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("API_AUTH_TOKEN") ||
+          localStorage.getItem("token") ||
+          undefined
+        : undefined;
+    const up =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("UPLOAD_TOKEN") || undefined
+        : undefined;
+    const down =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("DOWNLOAD_TOKEN") || undefined
+        : undefined;
     const hdrs: Record<string, string> = {};
     if (token) hdrs.Authorization = `Bearer ${token}`;
     if (up) hdrs["x-upload-token"] = up;
@@ -127,13 +151,22 @@ async function uploadFile<T>(
 export const apiClient = {
   async getSubjectSheet(q: SubjectSheetQuery): Promise<SubjectSheetResponse> {
     return request<SubjectSheetResponse>(
-      `/assessments/sheet?subject=${encodeURIComponent(
+      `/assessments?subject=${encodeURIComponent(
         q.subject
-      )}&class=${encodeURIComponent(q.class)}&academicYear=${encodeURIComponent(
+      )}&class=${encodeURIComponent(q.class)}&year=${encodeURIComponent(
         q.academicYear
       )}&term=${encodeURIComponent(q.term)}`,
       "GET"
     );
+  },
+  async getStudents(): Promise<StudentRecord[]> {
+    return request<StudentRecord[]>("/students", "GET");
+  },
+  async upsertStudent(student: StudentRecord): Promise<void> {
+    await request("/students", "POST", student);
+  },
+  async deleteStudent(id: string): Promise<void> {
+    await request(`/students/${id}`, "DELETE");
   },
   async uploadAssessments(
     file: File,
@@ -156,39 +189,18 @@ export const apiClient = {
       "POST"
     );
   },
-  async listAssessmentRepo(
-    q: {
-      subject?: string;
-      assessmentType?: string;
-      dateFrom?: string;
-      dateTo?: string;
-    },
-    role?: string
-  ): Promise<{ items: unknown[] }> {
-    const qs = new URLSearchParams();
-    if (q.subject) qs.set("subject", q.subject);
-    if (q.assessmentType) qs.set("assessmentType", q.assessmentType);
-    if (q.dateFrom) qs.set("dateFrom", q.dateFrom);
-    if (q.dateTo) qs.set("dateTo", q.dateTo);
-    const hdrs = role ? { "x-role": role } : undefined;
-    const r = await fetch(`${baseUrl()}/assessrepo/index?${qs.toString()}`, {
-      headers: hdrs,
-    });
-    const json = await r.json();
-    return json as { items: unknown[] };
+  async request<T = unknown>(
+    path: string,
+    method: HttpMethod,
+    body?: unknown
+  ): Promise<T> {
+    return request<T>(path, method, body);
   },
-  async pushAssessmentRepo(
-    changes: unknown[],
-    role?: string
-  ): Promise<{ results: unknown[] }> {
-    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
-    if (role) hdrs["x-role"] = role;
-    const r = await fetch(`${baseUrl()}/assessrepo/push`, {
-      method: "POST",
-      headers: hdrs,
-      body: JSON.stringify({ changes }),
-    });
-    const json = await r.json();
-    return json as { results: unknown[] };
+};
+
+export const api = {
+  get(path: string, options?: RequestInit) {
+    const url = `${baseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+    return fetch(url, options);
   },
 };

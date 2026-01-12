@@ -1,7 +1,4 @@
-import { kvGet, kvSet, saveData, getData } from "./storage";
 import { logger } from "./logger";
-
-// --- Types ---
 
 export interface SchoolConfig {
   name: string;
@@ -20,91 +17,41 @@ export interface AcademicConfig {
   term: string;
 }
 
-export interface SystemSetupData {
-  school: SchoolConfig;
-  academic: AcademicConfig;
-  version: number;
-  updatedAt: number;
-  checksum: string;
-}
-
-// --- Constants ---
-
-const SYS_CONFIG_VERSION = 1;
-
-// --- Helpers ---
-
-async function computeChecksum(data: unknown): Promise<string> {
-  const str = JSON.stringify(data);
-  const msgBuffer = new TextEncoder().encode(str);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-// --- Storage Handlers ---
-
 export const SchoolProfileStorage = {
-  async save(config: SchoolConfig, encrypt = false, passphrase?: string) {
+  async save(config: SchoolConfig) {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      logger.warn("school_profile_save_skipped_no_token");
+      throw new Error("Authentication required to save configuration");
+    }
+
     try {
-      // Create a wrapper with metadata
-      const payload = {
-        data: config,
-        version: SYS_CONFIG_VERSION,
-        updatedAt: Date.now(),
-      };
-
-      // Compute checksum for integrity
-      const checksum = await computeChecksum(config);
-      const wrapped = { ...payload, checksum };
-
-      // Serialize
-      const json = JSON.stringify(wrapped);
-
-      // Save using the robust hybrid storage (IDB for large data, Local for small)
-      const { id } = await saveData(json, {
-        kind: "download", // internal config
-        type: "application/json",
-        encrypt,
-        passphrase,
-        name: "SchoolProfileConfig",
-        tags: ["config", "school_profile"],
+      const res = await fetch("/api/config/school", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(config),
       });
-
-      // Store the reference ID in localStorage for fast lookup
-      kvSet("local", "SCHOOL_PROFILE_REF", id);
-      logger.info("school_profile_saved", { id, encrypted: encrypt });
-      return id;
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(
+          `Failed to save school config: ${res.status} ${errorText}`
+        );
+      }
+      logger.info("school_profile_saved");
     } catch (e) {
       logger.error("school_profile_save_error", e);
       throw e;
     }
   },
 
-  async load(passphrase?: string): Promise<SchoolConfig | null> {
+  async load(): Promise<SchoolConfig | null> {
     try {
-      const id = kvGet<string>("local", "SCHOOL_PROFILE_REF");
-      if (!id) return null;
-
-      const result = await getData(id, passphrase);
-      if (!result) return null;
-
-      const raw =
-        typeof result.data === "string"
-          ? result.data
-          : new TextDecoder().decode(result.data as ArrayBuffer);
-
-      const wrapped = JSON.parse(raw);
-
-      // Integrity check
-      const checksum = await computeChecksum(wrapped.data);
-      if (checksum !== wrapped.checksum) {
-        logger.warn("school_profile_checksum_mismatch", { id });
-        // Depending on strictness, we might return null or the data with a warning.
-        // For now, we log and return the data, but in a strict mode we should fail.
-      }
-
-      return wrapped.data as SchoolConfig;
+      const res = await fetch("/api/config/school");
+      if (!res.ok) return null;
+      return await res.json();
     } catch (e) {
       logger.error("school_profile_load_error", e);
       return null;
@@ -114,20 +61,27 @@ export const SchoolProfileStorage = {
 
 export const AcademicConfigStorage = {
   async save(config: AcademicConfig) {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      logger.warn("academic_config_save_skipped_no_token");
+      throw new Error("Authentication required to save configuration");
+    }
+
     try {
-      // Academic config is usually small, so we can stick to localStorage directly via kvSet
-      // BUT for consistency and "dedicated handlers" with versioning/checksum, we use the same pattern.
-      // Or we can use kvSet directly if we want simpler access.
-      // Requirement: "Use browser's localStorage API for text-based configurations"
-      // "Implement fallback mechanisms" - saveData handles fallback to IDB if quota exceeded.
-
-      const payload = {
-        data: config,
-        version: SYS_CONFIG_VERSION,
-        updatedAt: Date.now(),
-      };
-
-      kvSet("local", "ACADEMIC_CONFIG", payload);
+      const res = await fetch("/api/config/academic", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(config),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(
+          `Failed to save academic config: ${res.status} ${errorText}`
+        );
+      }
       logger.info("academic_config_saved");
     } catch (e) {
       logger.error("academic_config_save_error", e);
@@ -135,13 +89,11 @@ export const AcademicConfigStorage = {
     }
   },
 
-  load(): AcademicConfig | null {
+  async load(): Promise<AcademicConfig | null> {
     try {
-      const wrapped = kvGet<{ data: AcademicConfig }>(
-        "local",
-        "ACADEMIC_CONFIG"
-      );
-      return wrapped ? wrapped.data : null;
+      const res = await fetch("/api/config/academic");
+      if (!res.ok) return null;
+      return await res.json();
     } catch (e) {
       logger.error("academic_config_load_error", e);
       return null;
@@ -149,67 +101,19 @@ export const AcademicConfigStorage = {
   },
 };
 
-export const SignatureStorage = {
-  async save(file: File | Blob, encrypt = false, passphrase?: string) {
-    try {
-      const buffer = await file.arrayBuffer();
-      const { id } = await saveData(buffer, {
-        kind: "upload",
-        type: file.type || "image/png",
-        encrypt,
-        passphrase,
-        name: "HeadmasterSignature",
-        tags: ["config", "signature"],
-      });
-
-      kvSet("local", "SIGNATURE_REF", id);
-      logger.info("signature_saved", { id });
-      return id;
-    } catch (e) {
-      logger.error("signature_save_error", e);
-      throw e;
-    }
-  },
-
-  async load(passphrase?: string): Promise<{ url: string; blob: Blob } | null> {
-    try {
-      const id = kvGet<string>("local", "SIGNATURE_REF");
-      if (!id) return null;
-
-      const result = await getData(id, passphrase);
-      if (!result) return null;
-
-      const blob = new Blob([result.data], { type: result.meta.type });
-      const url = URL.createObjectURL(blob);
-      return { url, blob };
-    } catch (e) {
-      logger.error("signature_load_error", e);
-      return null;
-    }
-  },
-};
-
-// --- Combined System Config Handler ---
-
 export const SystemConfigStorage = {
-  async saveAll(
-    school: SchoolConfig,
-    academic: AcademicConfig,
-    encrypt = false,
-    passphrase?: string
-  ) {
-    await SchoolProfileStorage.save(school, encrypt, passphrase);
+  async saveAll(school: SchoolConfig, academic: AcademicConfig) {
+    await SchoolProfileStorage.save(school);
     await AcademicConfigStorage.save(academic);
-    logger.info("system_config_saved_all");
   },
 
-  async loadAll(passphrase?: string) {
-    const school = await SchoolProfileStorage.load(passphrase);
-    const academic = AcademicConfigStorage.load();
+  async loadAll() {
+    const school = await SchoolProfileStorage.load();
+    const academic = await AcademicConfigStorage.load();
     return { school, academic };
   },
 
   async clearAll() {
-    // Implement cleanup if needed
+    // No-op for server-side
   },
 };
