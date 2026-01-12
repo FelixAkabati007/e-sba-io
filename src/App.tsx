@@ -133,6 +133,19 @@ const AVAILABLE_CLASSES = [
   "JHS 3(C)",
 ];
 
+const SUBJECT_DISPLAY_NAMES: Record<string, string> = {
+  Mathematics: "Mathematics",
+  "English Language": "English Language",
+  "Integrated Science": "Integrated Science",
+  "Social Studies": "Social Studies",
+  Computing: "Computing",
+  "Career Technology": "Career Technology Education",
+  "Creative Arts": "Creative Arts",
+  French: "French",
+  "Ghanaian Language": "Ghanaian Language",
+  RME: "Religious And Moral Education (RME)",
+};
+
 const verKey = (cls: string, subj: string, ay: string, tm: string): string =>
   `ASSESSREPO::VER:${cls}:${subj}:${ay}:${tm}`;
 const lastProcessedKey = (
@@ -1962,7 +1975,9 @@ export default function App() {
                 className="bg-slate-50 p-3 rounded-md border border-slate-100"
               >
                 <div className="flex justify-between text-sm mb-1">
-                  <span className="font-medium">{subj}</span>
+                  <span className="font-medium">
+                    {SUBJECT_DISPLAY_NAMES[subj] || subj}
+                  </span>
                   <span
                     className={`font-bold ${
                       progress === 100 ? "text-green-600" : "text-blue-600"
@@ -2097,7 +2112,7 @@ export default function App() {
                 .map((subj) => (
                   <DashboardTile
                     key={subj}
-                    title={subj}
+                    title={SUBJECT_DISPLAY_NAMES[subj] || subj}
                     icon={user?.role === "CLASS" ? Lock : Calculator}
                     color={
                       user?.role === "CLASS"
@@ -2145,7 +2160,7 @@ export default function App() {
                 .map((subj) => (
                   <DashboardTile
                     key={subj}
-                    title={subj}
+                    title={SUBJECT_DISPLAY_NAMES[subj] || subj}
                     icon={user?.role === "CLASS" ? Lock : LayoutGrid}
                     color={
                       user?.role === "CLASS"
