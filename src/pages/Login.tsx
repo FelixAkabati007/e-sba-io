@@ -35,13 +35,11 @@ const Login: React.FC = () => {
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
         <div className="bg-blue-600 p-8 text-center">
-          <div className="mx-auto bg-white/20 w-20 h-20 rounded-full flex items-center justify-center mb-4 backdrop-blur-sm p-4">
-            <img
-              src="/logo.png"
-              alt="Logo"
-              className="w-full h-full object-contain"
-            />
-          </div>
+          <img
+            src="/logo.png"
+            alt="Logo"
+            className="mx-auto w-28 h-28 object-contain mb-4"
+          />
           <h1 className="text-2xl font-bold text-white">E-SBA System</h1>
           <p className="text-blue-100 mt-2">Secure Assessment Portal</p>
         </div>
