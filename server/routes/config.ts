@@ -64,21 +64,8 @@ router.post(
         width = undefined;
         height = undefined;
       }
-      await updateSchoolConfig({
-        logoUrl: (req.body?.inline === "1"
-          ? `data:${f.mimetype};base64,${buf.toString("base64")}`
-          : null) as string | null,
-      });
-      const client = await (await import("../lib/db")).pool.connect();
-      try {
-        await client.query(
-          `UPDATE school_settings
-           SET logo_image=$1, logo_filename=$2, logo_format=$3, logo_width=$4, logo_height=$5, updated_at=NOW()`,
-          [buf, f.originalname, f.mimetype, width ?? null, height ?? null]
-        );
-      } finally {
-        client.release();
-      }
+      const dataUrl = `data:${f.mimetype};base64,${buf.toString("base64")}`;
+      await updateSchoolConfig({ logoUrl: dataUrl });
       res.json({
         ok: true,
         filename: f.originalname,
