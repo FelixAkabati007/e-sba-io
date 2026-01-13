@@ -91,6 +91,39 @@ details JSONB,
 timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS users (
+user_id SERIAL PRIMARY KEY,
+username TEXT NOT NULL UNIQUE,
+password_hash TEXT NOT NULL,
+full_name TEXT NOT NULL,
+role TEXT NOT NULL CHECK (role IN ('HEAD', 'CLASS', 'SUBJECT')),
+assigned_class_id INT REFERENCES classes(class_id),
+assigned_subject_id INT REFERENCES subjects(subject_id),
+created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS attendance_records (
+attendance_id BIGSERIAL PRIMARY KEY,
+student_id TEXT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
+date DATE NOT NULL,
+status TEXT NOT NULL CHECK (status IN ('Present', 'Late', 'Absent', 'Excused')),
+arrival_time TIME,
+recorded_by INT REFERENCES users(user_id),
+last_modified_at TIMESTAMPTZ DEFAULT NOW(),
+UNIQUE(student_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS attendance_audit_logs (
+audit_id BIGSERIAL PRIMARY KEY,
+attendance_id BIGINT REFERENCES attendance_records(attendance_id) ON DELETE CASCADE,
+modified_by INT REFERENCES users(user_id),
+old_value TEXT,
+new_value TEXT,
+reason TEXT,
+timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_subject_core ON subjects(is_core);
 CREATE INDEX IF NOT EXISTS idx_session_active ON academic_sessions(is_active);
 CREATE INDEX IF NOT EXISTS idx_assessment_subject_session ON assessments(subject_id, session_id);
@@ -265,19 +298,19 @@ $$
 
 BEGIN
 RETURN QUERY
-SELECT sub.subject_name,
+SELECT sub.subject*name,
 a.raw_sba_total,
 a.exam_score,
-ROUND((a.raw_sba_total / 80) _ ss.cat_weight_percent, 1) AS class_weighted,
-ROUND((a.exam_score / 100) _ ss.exam_weight_percent, 1) AS exam_weighted,
-ROUND(((a.raw_sba_total / 80) _ ss.cat_weight_percent) + ((a.exam_score / 100) _ ss.exam_weight_percent)) AS final_score,
+ROUND((a.raw_sba_total / 80) * ss.cat*weight_percent, 1) AS class_weighted,
+ROUND((a.exam_score / 100) * ss.exam*weight_percent, 1) AS exam_weighted,
+ROUND(((a.raw_sba_total / 80) * ss.cat*weight_percent) + ((a.exam_score / 100) * ss.exam*weight_percent)) AS final_score,
 gs.grade_value,
 gs.remark,
 gs.description
 FROM subjects sub
 LEFT JOIN assessments a ON a.subject_id = sub.subject_id AND a.student_id = p_student_id AND a.session_id = p_session_id
 CROSS JOIN school_settings ss
-LEFT JOIN grading_system gs ON ROUND(((a.raw_sba_total / 80) _ ss.cat_weight_percent) + ((a.exam_score / 100) _ ss.exam_weight_percent)) BETWEEN gs.min_score AND gs.max_score
+LEFT JOIN grading_system gs ON ROUND(((a.raw_sba_total / 80) * ss.cat*weight_percent) + ((a.exam_score / 100) * ss.exam_weight_percent)) BETWEEN gs.min_score AND gs.max_score
 ORDER BY sub.subject_name;
 END;
 

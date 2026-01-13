@@ -27,7 +27,9 @@ import configRouter from "./routes/config";
 import assessmentsRouter from "./routes/assessments";
 import studentsRouter from "./routes/students";
 import progressRouter from "./routes/progress";
+import attendanceRouter from "./routes/attendance";
 import { seedAuth } from "./services/auth";
+import { initAttendanceDB } from "./services/attendance";
 
 const app = express();
 app.use(cors());
@@ -41,6 +43,7 @@ app.use("/api/assessments", assessmentsRouter);
 app.use("/api/students", studentsRouter);
 app.use("/api/blobdb", blobdbRouter);
 app.use("/api/progress", progressRouter);
+app.use("/api/attendance", attendanceRouter);
 app.use("/api/sync", syncRouter);
 // app.use("/api/assessrepo", assessRepoRouter); // Deprecated in favor of direct SQL
 
@@ -709,6 +712,7 @@ app.listen(port, async () => {
   }
   console.log(`[server] listening on http://localhost:${port}`);
   await seedAuth();
+  await initAttendanceDB();
   setInterval(
     () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
     60 * 60 * 1000

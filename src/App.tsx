@@ -33,6 +33,7 @@ import {
   Lock,
   Trophy,
 } from "lucide-react";
+import { AttendanceRegister } from "./components/AttendanceRegister";
 import * as XLSX from "xlsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -2709,6 +2710,23 @@ export default function App() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Attendance Module */}
+          {(user?.role === "HEAD" || user?.role === "CLASS") && (
+            <div className="md:col-span-3">
+              <h3 className="text-lg font-semibold text-slate-700 mb-4">
+                Attendance
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <DashboardTile
+                  title="Daily Register"
+                  icon={Calendar}
+                  color="bg-indigo-600"
+                  onClick={() => setCurrentView("register")}
+                />
+              </div>
+            </div>
+          )}
+
           <div className="md:col-span-3">
             <h3 className="text-lg font-semibold text-slate-700 mb-4">
               Core Subjects
@@ -6531,6 +6549,21 @@ export default function App() {
       </div>
       <main className="p-4 pb-16">
         {currentView === "home" && renderHome()}
+        {currentView === "register" && (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <button
+              onClick={() => setCurrentView("home")}
+              className="flex items-center gap-2 text-slate-600 hover:text-slate-900 mb-4"
+            >
+              <ArrowLeft size={20} /> Back to Dashboard
+            </button>
+            <AttendanceRegister
+              className={selectedClass}
+              academicYear={academicYear}
+              term={term}
+            />
+          </div>
+        )}
         {currentView === "subject" && renderSubjectSheet()}
         {currentView === "report" && renderReportCard()}
         {currentView === "masterdb" && renderMasterDB()}

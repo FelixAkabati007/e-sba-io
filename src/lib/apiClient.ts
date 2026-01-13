@@ -277,6 +277,37 @@ export const apiClient = {
       "POST"
     );
   },
+  async markDailyAttendance(data: {
+    studentId: string;
+    date: string;
+    time?: string;
+    status: string;
+    academicYear: string;
+    term: string;
+    reason?: string;
+  }): Promise<{ ok: boolean }> {
+    return request<{ ok: boolean }>("/attendance/daily", "POST", data);
+  },
+  async getDailyClassAttendance(
+    className: string,
+    date: string
+  ): Promise<{
+    data: Array<{
+      student_id: string;
+      surname: string;
+      first_name: string;
+      status: string | null;
+      arrival_time: string | null;
+      last_modified_at: string | null;
+    }>;
+  }> {
+    return request(
+      `/attendance/daily?className=${encodeURIComponent(
+        className
+      )}&date=${encodeURIComponent(date)}`,
+      "GET"
+    );
+  },
   async request<T = unknown>(
     path: string,
     method: HttpMethod,
