@@ -4054,7 +4054,7 @@ export default function App() {
           <button
             onClick={() => generateReportCardPDF(student.id)}
             disabled={isGeneratingDoc}
-            className="flex items-center space-x-2 bg-white border border-blue-200 text-blue-700 px-4 py-2 rounded hover:bg-blue-50"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
           >
             {isGeneratingDoc ? (
               <Loader2 size={16} className="animate-spin" />
@@ -4066,7 +4066,7 @@ export default function App() {
           <button
             onClick={() => generateReportCardPDF(null)}
             disabled={isGeneratingDoc}
-            className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-sm font-medium shadow-sm hover:shadow transition-all"
           >
             {isGeneratingDoc ? (
               <Loader2 size={16} className="animate-spin" />
