@@ -379,7 +379,6 @@ export default function App() {
   });
 
   const [isWipeModalOpen, setIsWipeModalOpen] = useState(false);
-  const [wipeConfirmText, setWipeConfirmText] = useState("");
   const [isWiping, setIsWiping] = useState(false);
 
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
@@ -1848,14 +1847,21 @@ export default function App() {
     setDeleteConfirmation({ isOpen: false, studentId: null });
 
   const openWipeModal = () => {
-    setWipeConfirmText("");
     setIsWipeModalOpen(true);
   };
   const closeWipeModal = () => {
     setIsWipeModalOpen(false);
   };
   const performWipe = async () => {
-    if (wipeConfirmText.trim().toUpperCase() !== "CLEAR") return;
+    // Second thought confirmation
+    if (
+      !window.confirm(
+        "CRITICAL WARNING: You are about to wipe the entire Neon Database.\n\nThis action cannot be undone. All students, assessments, and records will be permanently deleted.\n\nAre you absolutely sure you want to proceed?"
+      )
+    ) {
+      return;
+    }
+
     setIsWiping(true);
     try {
       try {
@@ -4554,20 +4560,10 @@ export default function App() {
                 This will permanently remove all student records and reset
                 counters.
               </p>
-              <div className="mt-4 w-full">
-                <label
-                  htmlFor="wipe-confirm"
-                  className="block text-sm font-medium text-slate-700 mb-1"
-                >
-                  Type CLEAR to confirm
-                </label>
-                <input
-                  id="wipe-confirm"
-                  value={wipeConfirmText}
-                  onChange={(e) => setWipeConfirmText(e.target.value)}
-                  className="w-full p-2 border rounded bg-slate-50"
-                  placeholder="CLEAR"
-                />
+              <div className="mt-4 w-full bg-red-50 p-3 rounded-md border border-red-100">
+                <p className="text-sm text-red-700 font-medium text-center">
+                  Clicking "Clear" will trigger a final confirmation.
+                </p>
               </div>
               <div className="flex gap-2 sm:gap-3 mt-6 w-full">
                 <button
@@ -4579,9 +4575,7 @@ export default function App() {
                 </button>
                 <button
                   onClick={performWipe}
-                  disabled={
-                    isWiping || wipeConfirmText.trim().toUpperCase() !== "CLEAR"
-                  }
+                  disabled={isWiping}
                   className="flex-1 px-4 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors text-sm sm:text-base"
                 >
                   {isWiping ? (
