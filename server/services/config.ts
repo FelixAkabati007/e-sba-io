@@ -1,4 +1,5 @@
 import { pool } from "../lib/db";
+import { imageSize } from "image-size";
 
 export type SchoolConfig = {
   name: string;
@@ -98,6 +99,39 @@ export async function updateSchoolConfig(config: Partial<SchoolConfig>) {
     if (config.logoUrl !== undefined) {
       updates.push(`logo_url=$${i++}`);
       values.push(config.logoUrl);
+      try {
+        if (config.logoUrl && config.logoUrl.startsWith("data:image/")) {
+          const match = config.logoUrl.match(
+            /^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/
+          );
+          if (match) {
+            const [, mime, b64] = match;
+            const buf = Buffer.from(b64, "base64");
+            let width: number | null = null;
+            let height: number | null = null;
+            try {
+              const dim = imageSize(buf);
+              width = dim.width ?? null;
+              height = dim.height ?? null;
+            } catch {
+              width = null;
+              height = null;
+            }
+            updates.push(`logo_image=$${i++}`);
+            values.push(buf);
+            updates.push(`logo_filename=$${i++}`);
+            values.push("school-logo");
+            updates.push(`logo_format=$${i++}`);
+            values.push(mime);
+            updates.push(`logo_width=$${i++}`);
+            values.push(width);
+            updates.push(`logo_height=$${i++}`);
+            values.push(height);
+          }
+        }
+      } catch {
+        // Ignore logo blob failures; URL text will still be saved
+      }
     }
     if (config.headSignatureUrl !== undefined) {
       updates.push(`head_signature_url=$${i++}`);

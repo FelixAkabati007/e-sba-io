@@ -509,6 +509,9 @@ export default function App() {
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const [logoError, setLogoError] = useState<string | null>(null);
   const [isProcessingLogo, setIsProcessingLogo] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [isLogoUploading, setIsLogoUploading] = useState(false);
+  const [logoFeedback, setLogoFeedback] = useState<string | null>(null);
   const [attendancePresent, setAttendancePresent] = useState("");
   const [attendanceTotal, setAttendanceTotal] = useState("");
   const [talentRemark, setTalentRemark] = useState("");
@@ -1796,6 +1799,8 @@ export default function App() {
     if (!file) return;
     setLogoError(null);
     setIsProcessingLogo(true);
+    setLogoFeedback(null);
+    setLogoFile(null);
     const validTypes = ["image/jpeg", "image/png", "image/svg+xml"];
     if (!validTypes.includes(file.type)) {
       setLogoError("Invalid file type.");
@@ -1807,6 +1812,7 @@ export default function App() {
       setIsProcessingLogo(false);
       return;
     }
+    setLogoFile(file);
     const reader = new FileReader();
     reader.onload = (event) => {
       const img = new Image();
@@ -1839,6 +1845,23 @@ export default function App() {
       img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
+  };
+
+  const saveLogoToServer = async () => {
+    if (!logoFile) return;
+    setIsLogoUploading(true);
+    setLogoFeedback(null);
+    try {
+      const r = await apiClient.uploadSchoolLogo(logoFile);
+      setLogoFeedback(
+        r.ok ? "Logo saved successfully." : "Failed to save logo."
+      );
+      setLogoFile(null);
+    } catch (e) {
+      setLogoFeedback((e as Error).message || "Upload failed");
+    } finally {
+      setIsLogoUploading(false);
+    }
   };
 
   const rotateLogo = () => {
@@ -5516,6 +5539,27 @@ export default function App() {
                   >
                     <Upload size={14} /> Upload
                   </button>
+                  <button
+                    onClick={saveLogoToServer}
+                    disabled={!logoFile || isLogoUploading}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+                      !logoFile || isLogoUploading
+                        ? "bg-emerald-200 text-white cursor-not-allowed"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                    }`}
+                    aria-label="Save logo"
+                    title="Save logo"
+                  >
+                    {isLogoUploading ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" /> Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save size={14} /> Save
+                      </>
+                    )}
+                  </button>
                   {schoolConfig.logoUrl && (
                     <>
                       <button
@@ -5544,6 +5588,9 @@ export default function App() {
                     </p>
                   )}
                 </div>
+                {logoFeedback && (
+                  <p className="text-xs text-emerald-700">{logoFeedback}</p>
+                )}
                 {schoolConfig.logoUrl && (
                   <button
                     onClick={() => setCurrentView("report")}

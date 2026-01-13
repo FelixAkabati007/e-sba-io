@@ -183,6 +183,36 @@ export const apiClient = {
   }> {
     return request("/meta/talent-remarks", "GET");
   },
+  async uploadSchoolLogo(file: File): Promise<{
+    ok: boolean;
+    filename: string;
+    format: string;
+    width: number | null;
+    height: number | null;
+  }> {
+    const token =
+      localStorage.getItem("API_AUTH_TOKEN") ||
+      localStorage.getItem("token") ||
+      "";
+    const fd = new FormData();
+    fd.append("logo", file);
+    const resp = await fetch(`${baseUrl()}/config/logo`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(text || `HTTP ${resp.status}`);
+    }
+    return (await resp.json()) as {
+      ok: boolean;
+      filename: string;
+      format: string;
+      width: number | null;
+      height: number | null;
+    };
+  },
   async getRankings(
     baseClass: string,
     academicYear: string,
