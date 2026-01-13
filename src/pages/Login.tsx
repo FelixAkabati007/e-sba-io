@@ -38,7 +38,7 @@ const Login: React.FC = () => {
           <img
             src="/logo.png"
             alt="Logo"
-            className="mx-auto w-28 h-28 object-contain mb-4"
+            className="mx-auto w-32 h-32 object-contain mb-4"
           />
           <h1 className="text-2xl font-bold text-white">E-SBA System</h1>
           <p className="text-blue-100 mt-2">Secure Assessment Portal</p>

@@ -10,7 +10,10 @@ const router = Router();
 // Helper to get total students in a class
 async function getTotalStudents(className: string): Promise<number> {
   const res = await pool.query(
-    "SELECT COUNT(*) as count FROM students WHERE class = $1 AND status = 'Active'",
+    `SELECT COUNT(*) as count 
+     FROM students s
+     JOIN classes c ON s.current_class_id = c.class_id
+     WHERE c.class_name = $1 AND s.enrollment_status = 'Active'`,
     [className]
   );
   return parseInt(res.rows[0]?.count || "0");
@@ -39,6 +42,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
     const sessionId = await getSessionId(String(academicYear), String(term));
     if (!sessionId) {
+      console.log("Session not found for:", academicYear, term);
       return res.json({ progress: 0, total: 0, incomplete: [] });
     }
 
@@ -46,6 +50,8 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
     let incompleteStudents: { id: string; name: string }[] = [];
 
     const total = await getTotalStudents(String(className));
+    console.log("Total students for class", className, ":", total);
+
     if (total === 0) return res.json({ progress: 0, total: 0, incomplete: [] });
 
     // 1. Subject Progress
@@ -66,12 +72,14 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
         return res.json({ progress: 0, total, incomplete: [] });
       const subjectId = subRows[0].subject_id;
 
-      // Find students who have marks (exam_score is a good proxy for 'started/done' but user might want 'any entry')
-      // We'll count if they have a record in assessments table
+      // Find students who have marks
       const { rows: doneRows } = await pool.query(
-        `SELECT student_id FROM assessments 
-         WHERE subject_id = $1 AND session_id = $2 
-         AND student_id IN (SELECT id FROM students WHERE class = $3 AND status = 'Active')`,
+        `SELECT a.student_id 
+         FROM assessments a
+         JOIN students s ON a.student_id = s.student_id
+         JOIN classes c ON s.current_class_id = c.class_id
+         WHERE a.subject_id = $1 AND a.session_id = $2 
+         AND c.class_name = $3 AND s.enrollment_status = 'Active'`,
         [subjectId, sessionId, className]
       );
 
@@ -80,7 +88,11 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
       // Find incomplete details
       const { rows: allStudents } = await pool.query(
-        "SELECT id, surname, first_name FROM students WHERE class = $1 AND status = 'Active' ORDER BY surname, first_name",
+        `SELECT s.student_id as id, s.surname, s.first_name 
+         FROM students s
+         JOIN classes c ON s.current_class_id = c.class_id
+         WHERE c.class_name = $1 AND s.enrollment_status = 'Active' 
+         ORDER BY s.surname, s.first_name`,
         [className]
       );
 
@@ -101,9 +113,12 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
       // Check for Talent Remarks (class_teacher_remark)
       const { rows: remarkRows } = await pool.query(
-        `SELECT student_id FROM talent_interests
-         WHERE session_id = $1 AND class_teacher_remark IS NOT NULL AND class_teacher_remark != ''
-         AND student_id IN (SELECT id FROM students WHERE class = $2 AND status = 'Active')`,
+        `SELECT t.student_id 
+         FROM talent_interests t
+         JOIN students s ON t.student_id = s.student_id
+         JOIN classes c ON s.current_class_id = c.class_id
+         WHERE t.session_id = $1 AND t.class_teacher_remark IS NOT NULL AND t.class_teacher_remark != ''
+         AND c.class_name = $2 AND s.enrollment_status = 'Active'`,
         [sessionId, className]
       );
 
@@ -111,7 +126,11 @@ router.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
       completedCount = doneIds.size;
 
       const { rows: allStudents } = await pool.query(
-        "SELECT id, surname, first_name FROM students WHERE class = $1 AND status = 'Active' ORDER BY surname, first_name",
+        `SELECT s.student_id as id, s.surname, s.first_name 
+         FROM students s
+         JOIN classes c ON s.current_class_id = c.class_id
+         WHERE c.class_name = $1 AND s.enrollment_status = 'Active' 
+         ORDER BY s.surname, s.first_name`,
         [className]
       );
 
