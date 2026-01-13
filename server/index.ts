@@ -20,6 +20,7 @@ import {
 } from "./services/signatures";
 import { pool } from "./lib/db";
 import blobdbRouter from "./routes/blobdb";
+import syncRouter from "./routes/sync";
 import authRouter from "./routes/auth";
 import reportingRouter from "./routes/reporting";
 import configRouter from "./routes/config";
@@ -40,7 +41,7 @@ app.use("/api/assessments", assessmentsRouter);
 app.use("/api/students", studentsRouter);
 app.use("/api/blobdb", blobdbRouter);
 app.use("/api/progress", progressRouter);
-// app.use("/api/sync", syncRouter); // Deprecated in favor of direct SQL
+app.use("/api/sync", syncRouter);
 // app.use("/api/assessrepo", assessRepoRouter); // Deprecated in favor of direct SQL
 
 // Serve built client app (dist) for production deployments

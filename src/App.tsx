@@ -38,6 +38,8 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { logger } from "./lib/logger";
 import { apiClient } from "./lib/apiClient";
+import { SyncClient } from "./lib/syncClient";
+import { offlineDb, type OfflineStudent } from "./lib/offlineDb";
 import {
   kvGet,
   kvSet,
@@ -204,6 +206,46 @@ export default function App() {
   const [academicYear, setAcademicYear] = useState("2025/2026");
   const [term, setTerm] = useState("Term 1");
   const [currentView, setCurrentView] = useState("home");
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const syncClientRef = useRef<SyncClient | null>(null);
+
+  useEffect(() => {
+    syncClientRef.current = new SyncClient({
+      baseUrl: "/api",
+      clientId: "esba-web",
+    });
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      void syncClientRef.current?.syncNow().then(() => {
+        setIsSyncing(false);
+      });
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    if (navigator.onLine) {
+      setIsOffline(false);
+      setIsSyncing(true);
+      void syncClientRef.current
+        .syncNow()
+        .catch((e) => logger.warn("initial_sync_failed", { error: String(e) }))
+        .finally(() => setIsSyncing(false));
+    } else {
+      setIsOffline(true);
+    }
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   // Ranking Report State
   interface RankingRow {
@@ -518,9 +560,40 @@ export default function App() {
   useEffect(() => {
     const loadStudents = async () => {
       try {
-        const data = await apiClient.getStudents();
-        setStudents(data);
-        logger.info("students_loaded_api", { count: data.length });
+        if (navigator.onLine) {
+          const data = await apiClient.getStudents();
+          setStudents(data);
+          logger.info("students_loaded_api", { count: data.length });
+          const docs: OfflineStudent[] = data.map((s) => ({
+            id: s.id,
+            surname: s.surname,
+            firstName: s.firstName,
+            middleName: s.middleName,
+            gender: s.gender,
+            dob: s.dob,
+            guardianContact: s.guardianContact,
+            class: s.class,
+            status: s.status,
+            version: 1,
+          }));
+          for (const d of docs) await offlineDb.putStudent(d);
+        } else {
+          const cached = await offlineDb.getStudentsByClass();
+          const mapped: Student[] = cached.map((c) => ({
+            id: c.id,
+            surname: c.surname,
+            firstName: c.firstName,
+            middleName: c.middleName || "",
+            gender: c.gender as Gender,
+            dob: c.dob,
+            guardianContact: c.guardianContact || "",
+            class: c.class,
+            status:
+              (c.status as "Active" | "Withdrawn" | "Inactive") || "Active",
+          }));
+          setStudents(mapped);
+          logger.info("students_loaded_offline", { count: mapped.length });
+        }
       } catch (e) {
         logger.error("students_load_failed", e);
       }
@@ -1911,7 +1984,24 @@ export default function App() {
         status: formData.status,
       };
 
-      await apiClient.upsertStudent(studentData);
+      const offlineDoc: OfflineStudent = {
+        id: studentData.id,
+        surname: studentData.surname,
+        firstName: studentData.firstName,
+        middleName: studentData.middleName,
+        gender: studentData.gender,
+        dob: studentData.dob,
+        guardianContact: studentData.guardianContact,
+        class: studentData.class,
+        status: studentData.status,
+        version: 1,
+      };
+      if (navigator.onLine) {
+        await apiClient.upsertStudent(studentData);
+        await offlineDb.putStudent(offlineDoc);
+      } else {
+        await syncClientRef.current?.queueUpsertStudent(offlineDoc);
+      }
 
       // Update local state
       if (editingStudent) {
@@ -1939,7 +2029,11 @@ export default function App() {
     const idToDelete = deleteConfirmation.studentId;
     if (!idToDelete) return;
     try {
-      await apiClient.deleteStudent(idToDelete);
+      if (navigator.onLine) {
+        await apiClient.deleteStudent(idToDelete);
+      } else {
+        await syncClientRef.current?.queueDeleteStudent(idToDelete);
+      }
       setStudents((prev) => prev.filter((s) => s.id !== idToDelete));
       setMarks((prev) => {
         const newMarks: Marks = { ...prev };
@@ -4905,26 +4999,59 @@ export default function App() {
             aria-labelledby="import-dialog-title"
             className="bg-white rounded-xl shadow-2xl w-full max-w-[95vw] sm:max-w-lg md:max-w-2xl overflow-hidden flex flex-col max-h-[85vh]"
           >
-            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex justify-between items-center bg-emerald-50">
-              <h3
-                id="import-dialog-title"
-                className="text-base sm:text-lg font-bold text-emerald-900 flex items-center gap-2"
-              >
-                <FileSpreadsheet size={20} className="text-emerald-600" />
-                Import Student Data (Excel)
-              </h3>
-              <button
-                onClick={() => {
-                  setIsImportModalOpen(false);
-                  setImportLogs([]);
-                  setImportedPreview([]);
-                }}
-                className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full p-2"
-                aria-label="Close import dialog"
-                title="Close"
-              >
-                <X size={20} />
-              </button>
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex flex-col gap-2 bg-emerald-50">
+              <div className="flex justify-between items-center gap-3">
+                <h3
+                  id="import-dialog-title"
+                  className="text-base sm:text-lg font-bold text-emerald-900 flex items-center gap-2"
+                >
+                  <FileSpreadsheet size={20} className="text-emerald-600" />
+                  Import Student Data (Excel)
+                </h3>
+                <button
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportLogs([]);
+                    setImportedPreview([]);
+                  }}
+                  className="text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full p-2"
+                  aria-label="Close import dialog"
+                  title="Close"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs sm:text-sm text-emerald-900 font-medium">
+                  Target Class for Import
+                </div>
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="import-class-select"
+                    className="text-xs text-slate-600"
+                  >
+                    Class
+                  </label>
+                  <select
+                    id="import-class-select"
+                    value={selectedClass}
+                    onChange={(e) => setSelectedClass(e.target.value)}
+                    className="p-1.5 sm:p-2 border border-emerald-200 rounded-md bg-white text-xs sm:text-sm min-w-[8rem] sm:min-w-[10rem] disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Select class for import"
+                    disabled={user?.role === "CLASS"}
+                  >
+                    <option>JHS 1(A)</option>
+                    <option>JHS 1(B)</option>
+                    <option>JHS 1(C)</option>
+                    <option>JHS 2(A)</option>
+                    <option>JHS 2(B)</option>
+                    <option>JHS 2(C)</option>
+                    <option>JHS 3(A)</option>
+                    <option>JHS 3(B)</option>
+                    <option>JHS 3(C)</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div className="p-4 sm:p-6 overflow-y-auto">
               {isImporting && (
@@ -5654,6 +5781,31 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-xs">
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border ${
+                isOffline
+                  ? "border-amber-400 text-amber-300 bg-amber-500/10"
+                  : "border-emerald-400 text-emerald-300 bg-emerald-500/10"
+              }`}
+              title={
+                isOffline ? "Offline mode: changes will sync later" : "Online"
+              }
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isOffline ? "bg-amber-400" : "bg-emerald-400"
+                }`}
+              />
+              <span>{isOffline ? "Offline" : "Online"}</span>
+            </span>
+            {isSyncing && (
+              <span className="inline-flex items-center gap-1 text-slate-300">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Syncing…</span>
+              </span>
+            )}
+          </div>
           <div className="text-xs text-slate-400 hidden md:block">
             v2.5.0 | Excel-Mode
           </div>
