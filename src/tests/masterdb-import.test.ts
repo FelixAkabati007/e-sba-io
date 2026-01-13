@@ -69,6 +69,21 @@ describe("MasterDB import validation", () => {
     expect(newStudents[1].id).toMatch(/^JHS25\d{3}$/);
   });
 
+  it("ensures dateOfBirth is populated matching dob", () => {
+    const existing: Student[] = [];
+    const preview = [
+      { surname: "Smith", firstname: "Alice", dob: "2005-05-05" },
+    ];
+    const { newStudents } = buildImportedStudents(
+      preview,
+      existing,
+      selectedClass,
+      academicYear
+    );
+    expect(newStudents[0].dob).toBe("2005-05-05");
+    expect(newStudents[0].dateOfBirth).toBe("2005-05-05");
+  });
+
   it("handles large datasets within reasonable time", () => {
     const existing: Student[] = [];
     const rows = 5000;

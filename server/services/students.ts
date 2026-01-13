@@ -7,6 +7,7 @@ export type Student = {
   middleName?: string;
   gender: "Male" | "Female";
   dateOfBirth: string;
+  dob?: string; // Alias for client compatibility
   guardianContact: string;
   class: string;
   status: "Active" | "Withdrawn" | "Inactive";
@@ -28,19 +29,23 @@ export async function getAllStudents(className?: string): Promise<Student[]> {
     query += ` ORDER BY s.surname, s.first_name`;
 
     const { rows } = await client.query(query, params);
-    return rows.map((r) => ({
-      id: r.student_id,
-      surname: r.surname,
-      firstName: r.first_name,
-      middleName: r.middle_name || "",
-      gender: r.gender,
-      dateOfBirth: r.date_of_birth
+    return rows.map((r) => {
+      const dob = r.date_of_birth
         ? new Date(r.date_of_birth).toISOString().split("T")[0]
-        : "",
-      guardianContact: r.guardian_contact || "",
-      class: r.class_name,
-      status: r.enrollment_status,
-    }));
+        : "";
+      return {
+        id: r.student_id,
+        surname: r.surname,
+        firstName: r.first_name,
+        middleName: r.middle_name || "",
+        gender: r.gender,
+        dateOfBirth: dob,
+        dob: dob, // Alias
+        guardianContact: r.guardian_contact || "",
+        class: r.class_name,
+        status: r.enrollment_status,
+      };
+    });
   } finally {
     client.release();
   }
@@ -87,6 +92,9 @@ export async function upsertStudent(student: Student): Promise<void> {
     );
     const classId = cRows2[0].class_id;
 
+    // Ensure dateOfBirth is never null
+    const dob = student.dateOfBirth || student.dob || "2000-01-01";
+
     await client.query(
       `INSERT INTO students (student_id, surname, first_name, middle_name, gender, date_of_birth, guardian_contact, current_class_id, enrollment_status, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
@@ -106,7 +114,7 @@ export async function upsertStudent(student: Student): Promise<void> {
         student.firstName,
         student.middleName || null,
         student.gender,
-        student.dateOfBirth || null,
+        dob,
         student.guardianContact || null,
         classId,
         student.status,

@@ -140,11 +140,11 @@ const SUBJECT_DISPLAY_NAMES: Record<string, string> = {
   "Integrated Science": "Integrated Science",
   "Social Studies": "Social Studies",
   Computing: "Computing",
-  "Career Technology": "Career Technology Education",
+  "Career Technology": "Career Technology",
   "Creative Arts": "Creative Arts",
   French: "French",
   "Ghanaian Language": "Ghanaian Language",
-  RME: "Religious And Moral Education (RME)",
+  RME: "RME",
 };
 
 const verKey = (cls: string, subj: string, ay: string, tm: string): string =>
@@ -225,7 +225,6 @@ export default function App() {
     }
     if (user?.role === "SUBJECT" && user.assignedSubjectName) {
       setActiveSubject(user.assignedSubjectName);
-      if (currentView === "home") setCurrentView("subject");
     }
   }, [user, currentView]);
 
@@ -1967,9 +1966,12 @@ export default function App() {
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {SUBJECTS.filter(
-            (s) => !user.assignedSubjectName || s === user.assignedSubjectName
-          ).map((subj) => {
+          {SUBJECTS.filter((s) => {
+            if (user.role === "SUBJECT") {
+              return s === user.assignedSubjectName;
+            }
+            return true;
+          }).map((subj) => {
             const progress = calculateSubjectProgress(subj, selectedClass);
             return (
               <div
