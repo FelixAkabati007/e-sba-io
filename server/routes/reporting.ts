@@ -5,6 +5,7 @@ import {
   saveAttendance,
   getAttendance,
   getRankings,
+  getClassAttendance,
 } from "../services/reporting";
 import { getStudentClass } from "../services/students";
 import { authenticateToken, AuthRequest } from "../middleware/auth";
@@ -117,6 +118,36 @@ router.get(
 
       const data = await getAttendance(
         String(studentId),
+        String(academicYear),
+        String(term)
+      );
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
+  }
+);
+
+router.get(
+  "/attendance/class",
+  async (req: express.Request, res: express.Response) => {
+    try {
+      const { className, academicYear, term } = req.query;
+      if (!className || !academicYear || !term) {
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
+
+      const user = (req as AuthRequest).user!;
+      if (user.role === "CLASS" && user.assignedClassName !== className) {
+        return res.status(403).json({ error: "Access denied to this class" });
+      }
+      // HEAD allowed. SUBJECT? Maybe restricted but let's allow HEAD and CLASS for now.
+      if (user.role !== "HEAD" && user.role !== "CLASS") {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const data = await getClassAttendance(
+        String(className),
         String(academicYear),
         String(term)
       );

@@ -425,6 +425,12 @@ export default function App() {
     macro?: boolean;
   } | null>(null);
   const [excelViewerActive, setExcelViewerActive] = useState(0);
+
+  const [attendanceMap, setAttendanceMap] = useState<
+    Record<string, { present: number; total: number }>
+  >({});
+
+  // Fetch Subject Sheet Marks
   useEffect(() => {
     let cancelled = false;
     const subject = activeSubject;
@@ -440,7 +446,9 @@ export default function App() {
           academicYear: year,
           term: t,
         });
+
         const rows = Array.isArray(data.rows) ? data.rows : [];
+
         if (cancelled) return;
         // saveMarksSession removed (no redundant save)
         if (rows.length === 0) {
@@ -473,13 +481,17 @@ export default function App() {
                 }
               >);
             next[sid][subject] = {
-              cat1: Number(r.cat1_score || 0),
-              cat2: Number(r.cat2_score || 0),
-              cat3: Number(r.cat3_score || 0),
-              cat4: Number(r.cat4_score || 0),
-              group: Number(r.group_work_score || 0),
-              project: Number(r.project_work_score || 0),
-              exam: Number(r.exam_score || 0),
+              cat1: Number((r as any).cat1 ?? (r as any).cat1_score ?? 0),
+              cat2: Number((r as any).cat2 ?? (r as any).cat2_score ?? 0),
+              cat3: Number((r as any).cat3 ?? (r as any).cat3_score ?? 0),
+              cat4: Number((r as any).cat4 ?? (r as any).cat4_score ?? 0),
+              group: Number(
+                (r as any).group ?? (r as any).group_work_score ?? 0
+              ),
+              project: Number(
+                (r as any).project ?? (r as any).project_work_score ?? 0
+              ),
+              exam: Number((r as any).exam ?? (r as any).exam_score ?? 0),
             };
           }
           return next;
@@ -500,6 +512,92 @@ export default function App() {
       cancelled = true;
     };
   }, [activeSubject, selectedClass, academicYear, term]);
+
+  // Fetch Class Attendance (Independent of Active Subject)
+  useEffect(() => {
+    let cancelled = false;
+    const cls = selectedClass;
+    const year = academicYear;
+    const t = term;
+    if (!cls || !year || !t) return;
+
+    (async () => {
+      try {
+        const attendanceData = await apiClient.getClassAttendance({
+          className: cls,
+          academicYear: year,
+          term: t,
+        });
+
+        if (cancelled) return;
+
+        if (Array.isArray(attendanceData)) {
+          setAttendanceMap((prev) => {
+            const next = { ...prev };
+            attendanceData.forEach((a) => {
+              if (a.student_id) {
+                next[a.student_id] = {
+                  present: Number(a.days_present || 0),
+                  total: Number(a.days_total || 0),
+                };
+              }
+            });
+            return next;
+          });
+        }
+      } catch (e) {
+        logger.error("attendance_load_failed", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClass, academicYear, term]);
+
+  // Fetch All Class Marks for Report Card Aggregation
+  useEffect(() => {
+    if (currentView !== "report") return;
+    const cls = selectedClass;
+    const year = academicYear;
+    const t = term;
+    if (!cls || !year || !t) return;
+
+    (async () => {
+      try {
+        const allMarks = await apiClient.getAllClassMarks({
+          class: cls,
+          academicYear: year,
+          term: t,
+        });
+
+        setMarks((prev) => {
+          const next: Marks = { ...prev };
+
+          Object.entries(allMarks).forEach(([subject, rows]) => {
+            rows.forEach((r: any) => {
+              const sid = String(r.student_id);
+              if (!next[sid]) {
+                next[sid] = {};
+              }
+              next[sid][subject] = {
+                cat1: Number(r.cat1 || 0),
+                cat2: Number(r.cat2 || 0),
+                cat3: Number(r.cat3 || 0),
+                cat4: Number(r.cat4 || 0),
+                group: Number(r.group || 0),
+                project: Number(r.project || 0),
+                exam: Number(r.exam || 0),
+              };
+            });
+          });
+          return next;
+        });
+      } catch (e) {
+        logger.error("Failed to fetch all class marks for report", e);
+      }
+    })();
+  }, [currentView, selectedClass, academicYear, term]);
 
   // removed legacy subscribeAssessments
   type ImportedRow = Record<string, unknown>;
@@ -2374,6 +2472,85 @@ export default function App() {
                   ))
                 )}
               </tbody>
+              <tfoot className="bg-slate-100 font-bold text-slate-700 border-t-2 border-slate-200">
+                {(() => {
+                  let tCat1 = 0,
+                    tCat2 = 0,
+                    tGroup = 0,
+                    tProj = 0,
+                    tRawSBA = 0,
+                    tScaledSBA = 0,
+                    tExam = 0,
+                    tScaledExam = 0,
+                    tFinal = 0;
+                  let count = 0;
+                  filteredStudents.forEach((s) => {
+                    const m = marks[s.id]?.[activeSubject];
+                    if (m) {
+                      count++;
+                      tCat1 += m.cat1 || 0;
+                      tCat2 += m.cat2 || 0;
+                      tGroup += m.group || 0;
+                      tProj += m.project || 0;
+                      const rawSBA =
+                        m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
+                      tRawSBA += rawSBA;
+
+                      const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+                      tScaledSBA += scaledSBA;
+
+                      tExam += m.exam || 0;
+                      const scaledExam =
+                        (m.exam / 100) * schoolConfig.examWeight;
+                      tScaledExam += scaledExam;
+
+                      tFinal += Math.round(scaledSBA + scaledExam);
+                    }
+                  });
+
+                  const avg = (val: number) =>
+                    count > 0 ? (val / count).toFixed(1) : "-";
+
+                  return (
+                    <tr>
+                      <td
+                        colSpan={2}
+                        className="px-4 py-3 text-right uppercase text-xs tracking-wider"
+                      >
+                        Class Averages:
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs">
+                        {avg(tCat1)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs">
+                        {avg(tCat2)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs bg-purple-50">
+                        {avg(tGroup)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs bg-purple-50">
+                        {avg(tProj)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs text-slate-500">
+                        {avg(tRawSBA)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs text-green-700 bg-green-50">
+                        {avg(tScaledSBA)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs bg-red-50">
+                        {avg(tExam)}
+                      </td>
+                      <td className="px-2 py-3 text-center text-xs text-green-700 bg-green-50">
+                        {avg(tScaledExam)}
+                      </td>
+                      <td className="px-4 py-3 text-center font-black text-sm">
+                        {avg(tFinal)}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  );
+                })()}
+              </tfoot>
             </table>
           </div>
 
@@ -2733,7 +2910,7 @@ export default function App() {
           </div>
         </div>
         {/* Subject Progress Bar */}
-        <div className="px-4 pt-4">
+        <div className="px-4 pt-4 space-y-4">
           <ProgressBar
             scope="subject"
             className={selectedClass}
@@ -2741,6 +2918,147 @@ export default function App() {
             academicYear={academicYear}
             term={term}
           />
+          {/* Aggregate Summary Cards */}
+          {(() => {
+            let totalFinal = 0;
+            let count = 0;
+            let passCount = 0;
+            const scores: number[] = [];
+            const gradeDistribution: Record<string, number> = {};
+
+            // Initialize counts
+            gradingSystem.forEach((g) => (gradeDistribution[g.grade] = 0));
+
+            filteredStudents.forEach((s) => {
+              const m = marks[s.id]?.[activeSubject];
+              if (m) {
+                const rawSBA =
+                  m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
+                const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+                const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
+                const final = Math.round(scaledSBA + scaledExam);
+                totalFinal += final;
+                scores.push(final);
+                if (final >= 50) passCount++;
+                count++;
+
+                const g = calculateGrade(final);
+                gradeDistribution[g.grade] =
+                  (gradeDistribution[g.grade] || 0) + 1;
+              }
+            });
+
+            const avg = count > 0 ? (totalFinal / count).toFixed(1) : "-";
+            const max = scores.length > 0 ? Math.max(...scores) : "-";
+            const min = scores.length > 0 ? Math.min(...scores) : "-";
+            const passRate =
+              count > 0 ? ((passCount / count) * 100).toFixed(1) + "%" : "-";
+
+            const attendanceValues = Object.values(attendanceMap);
+            const avgAttendance =
+              attendanceValues.length > 0
+                ? (
+                    (attendanceValues.reduce(
+                      (acc, curr) =>
+                        acc + (curr.total > 0 ? curr.present / curr.total : 0),
+                      0
+                    ) /
+                      attendanceValues.length) *
+                    100
+                  ).toFixed(1) + "%"
+                : "-";
+
+            const maxCount = Math.max(...Object.values(gradeDistribution), 1);
+
+            return (
+              <div className="space-y-6">
+                <section
+                  className="grid grid-cols-2 md:grid-cols-5 gap-4"
+                  aria-label="Class Performance Summary"
+                >
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 shadow-sm">
+                    <h3 className="text-xs text-blue-600 font-bold uppercase tracking-wider">
+                      Class Average
+                    </h3>
+                    <p className="text-2xl font-black text-blue-900 mt-1">
+                      {avg}
+                    </p>
+                  </div>
+                  <div className="bg-green-50 p-3 rounded-lg border border-green-100 shadow-sm">
+                    <h3 className="text-xs text-green-600 font-bold uppercase tracking-wider">
+                      Highest Score
+                    </h3>
+                    <p className="text-2xl font-black text-green-900 mt-1">
+                      {max}
+                    </p>
+                  </div>
+                  <div className="bg-red-50 p-3 rounded-lg border border-red-100 shadow-sm">
+                    <h3 className="text-xs text-red-600 font-bold uppercase tracking-wider">
+                      Lowest Score
+                    </h3>
+                    <p className="text-2xl font-black text-red-900 mt-1">
+                      {min}
+                    </p>
+                  </div>
+                  <div className="bg-purple-50 p-3 rounded-lg border border-purple-100 shadow-sm">
+                    <h3 className="text-xs text-purple-600 font-bold uppercase tracking-wider">
+                      Pass Rate
+                    </h3>
+                    <p className="text-2xl font-black text-purple-900 mt-1">
+                      {passRate}
+                    </p>
+                  </div>
+                  <div className="bg-amber-50 p-3 rounded-lg border border-amber-100 shadow-sm">
+                    <h3 className="text-xs text-amber-600 font-bold uppercase tracking-wider">
+                      Avg Attendance
+                    </h3>
+                    <p className="text-2xl font-black text-amber-900 mt-1">
+                      {avgAttendance}
+                    </p>
+                  </div>
+                </section>
+
+                {/* Grade Distribution Chart */}
+                <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm print:hidden">
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">
+                    Grade Distribution
+                  </h3>
+                  <div className="flex items-end justify-between h-32 gap-2">
+                    {gradingSystem.map((band) => {
+                      const count = gradeDistribution[band.grade] || 0;
+                      const height = count > 0 ? (count / maxCount) * 100 : 0;
+                      return (
+                        <div
+                          key={band.grade}
+                          className="flex flex-col items-center flex-1 group relative"
+                        >
+                          <div className="w-full bg-slate-100 rounded-t-sm relative h-full flex items-end">
+                            <div
+                              className={`w-full transition-all duration-500 ${
+                                count > 0 ? "bg-blue-500" : "bg-transparent"
+                              } hover:bg-blue-600 rounded-t-sm`}
+                              style={{ height: `${height}%` }}
+                            ></div>
+                            {count > 0 && (
+                              <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 text-xs font-bold text-slate-700 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {count}
+                              </div>
+                            )}
+                          </div>
+                          <div className="mt-2 text-xs font-bold text-slate-600">
+                            {band.grade}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {count}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
         <div className="overflow-auto flex-1">
           {isGeneratingTemplate && (
@@ -2790,6 +3108,7 @@ export default function App() {
                   <span className="hidden md:inline">Remark</span>
                   <span className="md:hidden">Rem</span>
                 </th>
+                <th className="px-2 py-3 text-center bg-amber-50">Att.</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -2931,10 +3250,145 @@ export default function App() {
                       {g.grade}
                     </td>
                     <td className="px-4 text-center text-xs">{g.desc}</td>
+                    <td className="px-2 text-center text-xs bg-amber-50 border-l border-slate-200">
+                      {attendanceMap[student.id]
+                        ? `${attendanceMap[student.id].present}/${
+                            attendanceMap[student.id].total
+                          }`
+                        : "-"}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
+            <tfoot className="bg-slate-100 font-bold text-slate-700 border-t-2 border-slate-200">
+              {(() => {
+                const totals = {
+                  cat1: [] as number[],
+                  cat2: [] as number[],
+                  cat3: [] as number[],
+                  cat4: [] as number[],
+                  group: [] as number[],
+                  project: [] as number[],
+                  rawSBA: [] as number[],
+                  scaledSBA: [] as number[],
+                  exam: [] as number[],
+                  scaledExam: [] as number[],
+                  final: [] as number[],
+                  attendance: [] as number[],
+                };
+
+                let count = 0;
+                filteredStudents.forEach((s) => {
+                  const m = marks[s.id]?.[activeSubject];
+                  const att = attendanceMap[s.id];
+                  if (att && att.total > 0) {
+                    totals.attendance.push((att.present / att.total) * 100);
+                  }
+                  if (m) {
+                    count++;
+                    if (m.cat1 !== undefined) totals.cat1.push(m.cat1);
+                    if (m.cat2 !== undefined) totals.cat2.push(m.cat2);
+                    if (m.cat3 !== undefined) totals.cat3.push(m.cat3);
+                    if (m.cat4 !== undefined) totals.cat4.push(m.cat4);
+                    if (m.group !== undefined) totals.group.push(m.group);
+                    if (m.project !== undefined) totals.project.push(m.project);
+
+                    const rawSBA =
+                      (m.cat1 || 0) +
+                      (m.cat2 || 0) +
+                      (m.cat3 || 0) +
+                      (m.cat4 || 0) +
+                      (m.group || 0) +
+                      (m.project || 0);
+                    totals.rawSBA.push(rawSBA);
+
+                    const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+                    totals.scaledSBA.push(scaledSBA);
+
+                    if (m.exam !== undefined) totals.exam.push(m.exam);
+                    const scaledExam =
+                      ((m.exam || 0) / 100) * schoolConfig.examWeight;
+                    totals.scaledExam.push(scaledExam);
+
+                    totals.final.push(Math.round(scaledSBA + scaledExam));
+                  }
+                });
+
+                const avg = (arr: number[]) =>
+                  arr.length > 0
+                    ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)
+                    : "-";
+                const max = (arr: number[]) =>
+                  arr.length > 0 ? Math.max(...arr).toFixed(1) : "-";
+                const min = (arr: number[]) =>
+                  arr.length > 0 ? Math.min(...arr).toFixed(1) : "-";
+                const cnt = (arr: number[]) => arr.length;
+
+                const renderRow = (
+                  label: string,
+                  fn: (arr: number[]) => string | number,
+                  bgClass = ""
+                ) => (
+                  <tr className={bgClass}>
+                    <td
+                      colSpan={2}
+                      className="px-4 py-2 text-right uppercase text-xs tracking-wider border-b border-slate-200"
+                    >
+                      {label}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs border-b border-slate-200">
+                      {fn(totals.cat1)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs border-b border-slate-200">
+                      {fn(totals.cat2)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs bg-purple-50 border-b border-slate-200">
+                      {fn(totals.group)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs bg-purple-50 border-b border-slate-200">
+                      {fn(totals.project)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs text-slate-500 border-b border-slate-200">
+                      {fn(totals.rawSBA)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs text-green-700 bg-green-50 border-b border-slate-200">
+                      {fn(totals.scaledSBA)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs bg-red-50 border-b border-slate-200">
+                      {fn(totals.exam)}
+                    </td>
+                    <td className="px-2 py-2 text-center text-xs text-green-700 bg-green-50 border-b border-slate-200">
+                      {fn(totals.scaledExam)}
+                    </td>
+                    <td className="px-4 py-2 text-center font-black text-sm border-b border-slate-200">
+                      {fn(totals.final)}
+                    </td>
+                    <td colSpan={2} className="border-b border-slate-200"></td>
+                    <td className="px-2 py-2 text-center text-xs bg-amber-50 border-b border-slate-200 border-l">
+                      {label === "Student Count:"
+                        ? cnt(totals.attendance)
+                        : fn(totals.attendance) === "-"
+                        ? "-"
+                        : `${fn(totals.attendance)}%`}
+                    </td>
+                  </tr>
+                );
+
+                return (
+                  <>
+                    {renderRow("Class Average:", avg, "bg-slate-50")}
+                    {renderRow("Highest Score:", max)}
+                    {renderRow("Lowest Score:", min)}
+                    {renderRow(
+                      "Student Count:",
+                      cnt,
+                      "bg-slate-50 text-slate-500"
+                    )}
+                  </>
+                );
+              })()}
+            </tfoot>
           </table>
         </div>
       </div>
@@ -3273,6 +3727,172 @@ export default function App() {
             g.desc,
           ];
         });
+
+        // Calculate Aggregates for Export
+        let tCat1 = 0,
+          tCat2 = 0,
+          tCat3 = 0,
+          tCat4 = 0,
+          tGroup = 0,
+          tProj = 0,
+          tRawSBA = 0,
+          tScaledSBA = 0,
+          tExam = 0,
+          tScaledExam = 0,
+          tFinal = 0;
+        let count = 0;
+        let passCount = 0;
+        const finalScores: number[] = [];
+
+        filteredStudents.forEach((s) => {
+          const m = marks[s.id]?.[activeSubject];
+          if (m) {
+            count++;
+            tCat1 += m.cat1 || 0;
+            tCat2 += m.cat2 || 0;
+            tCat3 += m.cat3 || 0;
+            tCat4 += m.cat4 || 0;
+            tGroup += m.group || 0;
+            tProj += m.project || 0;
+
+            const rawSBA =
+              m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
+            tRawSBA += rawSBA;
+
+            const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+            tScaledSBA += scaledSBA;
+
+            tExam += m.exam || 0;
+            const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
+            tScaledExam += scaledExam;
+
+            const final = Math.round(scaledSBA + scaledExam);
+            tFinal += final;
+            finalScores.push(final);
+            if (final >= 50) passCount++;
+          }
+        });
+
+        const avg = (val: number) =>
+          count > 0 ? Number((val / count).toFixed(1)) : 0;
+
+        const classAverage = avg(tFinal);
+        const maxScore = finalScores.length > 0 ? Math.max(...finalScores) : 0;
+        const minScore = finalScores.length > 0 ? Math.min(...finalScores) : 0;
+        const passRate =
+          count > 0 ? ((passCount / count) * 100).toFixed(1) + "%" : "0%";
+
+        // Append Aggregates to Rows
+        // Empty row separator
+        rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+
+        // Column Averages
+        rows.push([
+          "Class Averages",
+          "",
+          avg(tCat1),
+          avg(tCat2),
+          avg(tCat3),
+          avg(tCat4),
+          avg(tGroup),
+          avg(tProj),
+          avg(tRawSBA),
+          avg(tScaledSBA),
+          avg(tExam),
+          avg(tScaledExam),
+          classAverage,
+          "",
+          "",
+        ]);
+
+        // Summary Block
+        rows.push(["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+        rows.push([
+          "Summary Statistics",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+        rows.push([
+          "Class Average",
+          classAverage,
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+        rows.push([
+          "Highest Score",
+          maxScore,
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+        rows.push([
+          "Lowest Score",
+          minScore,
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+        rows.push([
+          "Pass Rate",
+          passRate,
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+        ]);
+
         const data = [headers, ...rows];
         const ws = XLSX.utils.aoa_to_sheet(data);
         for (let r = 1; r <= rows.length; r++) {
@@ -3885,21 +4505,35 @@ export default function App() {
   const renderReportCard = () => {
     const effectiveReportId = reportId || filteredStudents[0]?.id || "";
     const student = students.find((s) => s.id === effectiveReportId);
-    const subjectRanks: Record<string, string> = {};
+    const subjectStats: Record<string, { rank: string; avg: string }> = {};
     SUBJECTS.forEach((subj) => {
+      let totalScore = 0;
+      let count = 0;
       const allMarks = filteredStudents
         .map((s) => {
           const m = marks[s.id]?.[subj];
-          if (!m) return { id: s.id, score: 0 };
+          if (!m) return { id: s.id, score: 0, hasMark: false };
           const rawSBA =
             ((m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project) / 80) *
             schoolConfig.catWeight;
           const rawExam = (m.exam / 100) * schoolConfig.examWeight;
-          return { id: s.id, score: Math.round(rawSBA + rawExam) };
+          const score = Math.round(rawSBA + rawExam);
+          // Only count towards average if there is some data (simple heuristic: score > 0 or explicit check)
+          // Ideally we check if mark object exists, which we did.
+          // However, existing logic returned score: 0 if !m.
+          if (m) {
+            totalScore += score;
+            count++;
+          }
+          return { id: s.id, score, hasMark: !!m };
         })
         .sort((a, b) => b.score - a.score);
+
       const rankIndex = allMarks.findIndex((x) => x.id === effectiveReportId);
-      subjectRanks[subj] = rankIndex !== -1 ? getOrdinal(rankIndex + 1) : "-";
+      subjectStats[subj] = {
+        rank: rankIndex !== -1 ? getOrdinal(rankIndex + 1) : "-",
+        avg: count > 0 ? (totalScore / count).toFixed(1) : "-",
+      };
     });
     if (!student)
       return (
@@ -4139,84 +4773,92 @@ export default function App() {
               {student.guardianContact}
             </div>
           </div>
-          <table className="w-full text-sm border-collapse border border-slate-300">
-            <thead>
-              <tr className="bg-slate-100 text-slate-800">
-                <th className="border border-slate-300 p-2 text-left">
-                  Subject
-                </th>
-                <th className="border border-slate-300 p-2 text-center">
-                  Class ({schoolConfig.catWeight}%)
-                </th>
-                <th className="border border-slate-300 p-2 text-center">
-                  Exam ({schoolConfig.examWeight}%)
-                </th>
-                <th className="border border-slate-300 p-2 text-center">
-                  Total
-                </th>
-                <th className="border border-slate-300 p-2 text-center">
-                  Grade
-                </th>
-                <th className="border border-slate-300 p-2 text-center">
-                  Pos.
-                </th>
-                <th className="border border-slate-300 p-2 text-left">
-                  Remark
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {SUBJECTS.map((subj) => {
-                const m = marks[student.id]?.[subj];
-                if (!m)
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse border border-slate-300">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800">
+                  <th className="border border-slate-300 p-2 text-left">
+                    Subject
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center">
+                    Class ({schoolConfig.catWeight}%)
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center">
+                    Exam ({schoolConfig.examWeight}%)
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center">
+                    Total
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center">
+                    Grade
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center bg-blue-50">
+                    Class Avg
+                  </th>
+                  <th className="border border-slate-300 p-2 text-center">
+                    Pos.
+                  </th>
+                  <th className="border border-slate-300 p-2 text-left">
+                    Remark
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {SUBJECTS.map((subj) => {
+                  const m = marks[student.id]?.[subj];
+                  if (!m)
+                    return (
+                      <tr key={subj}>
+                        <td className="border border-slate-300 p-2 font-medium">
+                          {subj}
+                        </td>
+                        <td
+                          colSpan={7}
+                          className="border border-slate-300 p-2 text-center text-slate-400"
+                        >
+                          Not Graded
+                        </td>
+                      </tr>
+                    );
+                  const rawSBA =
+                    ((m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project) /
+                      80) *
+                    schoolConfig.catWeight;
+                  const rawExam = (m.exam / 100) * schoolConfig.examWeight;
+                  const final = Math.round(rawSBA + rawExam);
+                  const g = calculateGrade(final);
                   return (
                     <tr key={subj}>
                       <td className="border border-slate-300 p-2 font-medium">
                         {subj}
                       </td>
-                      <td
-                        colSpan={6}
-                        className="border border-slate-300 p-2 text-center text-slate-400"
-                      >
-                        Not Graded
+                      <td className="border border-slate-300 p-2 text-center">
+                        {rawSBA.toFixed(1)}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-center">
+                        {rawExam.toFixed(1)}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-center font-bold">
+                        {final}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-center font-bold text-blue-700">
+                        {g.grade}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-center text-xs bg-blue-50 font-semibold text-slate-600">
+                        {subjectStats[subj]?.avg || "-"}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-center text-xs">
+                        {subjectStats[subj]?.rank || "-"}
+                      </td>
+                      <td className="border border-slate-300 p-2 text-xs">
+                        {g.desc}
                       </td>
                     </tr>
                   );
-                const rawSBA =
-                  ((m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project) /
-                    80) *
-                  schoolConfig.catWeight;
-                const rawExam = (m.exam / 100) * schoolConfig.examWeight;
-                const final = Math.round(rawSBA + rawExam);
-                const g = calculateGrade(final);
-                return (
-                  <tr key={subj}>
-                    <td className="border border-slate-300 p-2 font-medium">
-                      {subj}
-                    </td>
-                    <td className="border border-slate-300 p-2 text-center">
-                      {rawSBA.toFixed(1)}
-                    </td>
-                    <td className="border border-slate-300 p-2 text-center">
-                      {rawExam.toFixed(1)}
-                    </td>
-                    <td className="border border-slate-300 p-2 text-center font-bold">
-                      {final}
-                    </td>
-                    <td className="border border-slate-300 p-2 text-center font-bold text-blue-700">
-                      {g.grade}
-                    </td>
-                    <td className="border border-slate-300 p-2 text-center text-xs">
-                      {subjectRanks[subj]}
-                    </td>
-                    <td className="border border-slate-300 p-2 text-xs">
-                      {g.desc}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                })}
+              </tbody>
+            </table>
+          </div>
           <div className="mt-6 bg-white p-6 rounded-lg border border-slate-200">
             <h3 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-100 pb-4">
               Report Overview
@@ -4314,6 +4956,18 @@ export default function App() {
                         tabIndex={user?.role === "CLASS" ? -1 : 0}
                       />
                     </div>
+                    {Number(attendancePresent) && Number(attendanceTotal) ? (
+                      <div className="text-center mt-1">
+                        <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {(
+                            (Number(attendancePresent) /
+                              Number(attendanceTotal)) *
+                            100
+                          ).toFixed(1)}
+                          % Present
+                        </span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Talent & Teacher Remark Section (Editable by Class Teacher) */}

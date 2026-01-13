@@ -193,3 +193,54 @@ export async function getSubjectMarks(
     exam: Number(r.exam_score || 0),
   }));
 }
+
+export async function getAllClassMarks(
+  client: PoolClient,
+  className: string,
+  academicYear: string,
+  term: string
+): Promise<Record<string, Row[]>> {
+  const sessionId = await ensureSession(client, academicYear, term);
+
+  const { rows } = await client.query(
+    `SELECT
+       s.student_id,
+       sub.subject_name,
+       a.cat1_score,
+       a.cat2_score,
+       a.cat3_score,
+       a.cat4_score,
+       a.group_work_score,
+       a.project_work_score,
+       a.exam_score
+     FROM students s
+     JOIN assessments a ON s.student_id = a.student_id
+     JOIN subjects sub ON a.subject_id = sub.subject_id
+     WHERE s.current_class = $1 AND a.session_id = $2`,
+    [className, sessionId]
+  );
+
+  // Group by subject for easier consumption, or just return flat list?
+  // The current API expects rows per subject usually.
+  // But here we want to return everything.
+  // Let's return a map of Subject -> Rows.
+
+  const result: Record<string, Row[]> = {};
+
+  for (const r of rows) {
+    const subj = r.subject_name;
+    if (!result[subj]) result[subj] = [];
+    result[subj].push({
+      student_id: r.student_id,
+      cat1: Number(r.cat1_score || 0),
+      cat2: Number(r.cat2_score || 0),
+      cat3: Number(r.cat3_score || 0),
+      cat4: Number(r.cat4_score || 0),
+      group: Number(r.group_work_score || 0),
+      project: Number(r.project_work_score || 0),
+      exam: Number(r.exam_score || 0),
+    });
+  }
+
+  return result;
+}

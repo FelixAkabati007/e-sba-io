@@ -198,3 +198,25 @@ export async function getAttendance(
     client.release();
   }
 }
+
+export async function getClassAttendance(
+  className: string,
+  academicYear: string,
+  term: string
+) {
+  const client = await pool.connect();
+  try {
+    const sessionId = await ensureSession(client, academicYear, term);
+    const query = `
+      SELECT s.student_id, a.days_present, a.days_total
+      FROM students s
+      JOIN classes c ON s.current_class_id = c.class_id
+      LEFT JOIN attendance a ON s.student_id = a.student_id AND a.session_id = $2
+      WHERE c.class_name = $1
+    `;
+    const { rows } = await client.query(query, [className, sessionId]);
+    return rows;
+  } finally {
+    client.release();
+  }
+}

@@ -7,6 +7,7 @@ import {
   parseAssessmentSheet,
   saveMarksTransaction,
   getSubjectMarks,
+  getAllClassMarks,
 } from "../services/assessments";
 import {
   buildAssessmentTemplateXLSX,
@@ -69,7 +70,7 @@ router.get("/", authenticateToken, async (req, res) => {
   const academicYear = String(req.query.year || "");
   const term = String(req.query.term || "");
 
-  if (!className || !subject || !academicYear || !term) {
+  if (!className || !academicYear || !term) {
     return res.status(400).json({ error: "Missing required parameters" });
   }
 
@@ -78,20 +79,39 @@ router.get("/", authenticateToken, async (req, res) => {
   if (user.role === "CLASS" && user.assignedClassName !== className) {
     return res.status(403).json({ error: "Access denied to this class" });
   }
-  if (user.role === "SUBJECT" && user.assignedSubjectName !== subject) {
+  if (
+    subject &&
+    user.role === "SUBJECT" &&
+    user.assignedSubjectName !== subject
+  ) {
     return res.status(403).json({ error: "Access denied to this subject" });
+  }
+  if (!subject && user.role === "SUBJECT") {
+    return res
+      .status(403)
+      .json({ error: "Subject teachers must specify a subject" });
   }
 
   const client = await pool.connect();
   try {
-    const rows = await getSubjectMarks(
-      client,
-      className,
-      subject,
-      academicYear,
-      term
-    );
-    res.json({ rows });
+    if (subject) {
+      const rows = await getSubjectMarks(
+        client,
+        className,
+        subject,
+        academicYear,
+        term
+      );
+      res.json({ rows });
+    } else {
+      const allMarks = await getAllClassMarks(
+        client,
+        className,
+        academicYear,
+        term
+      );
+      res.json({ allMarks });
+    }
   } catch (e) {
     res.status(500).json({ error: (e as Error).message });
   } finally {

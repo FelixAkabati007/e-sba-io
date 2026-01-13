@@ -149,6 +149,22 @@ async function uploadFile<T>(
 }
 
 export const apiClient = {
+  async getClassAttendance(q: {
+    className: string;
+    academicYear: string;
+    term: string;
+  }): Promise<
+    Array<{ student_id: string; days_present: number; days_total: number }>
+  > {
+    return request(
+      `/reports/attendance/class?className=${encodeURIComponent(
+        q.className
+      )}&academicYear=${encodeURIComponent(
+        q.academicYear
+      )}&term=${encodeURIComponent(q.term)}`,
+      "GET"
+    );
+  },
   async getSubjectSheet(q: SubjectSheetQuery): Promise<SubjectSheetResponse> {
     return request<SubjectSheetResponse>(
       `/assessments?subject=${encodeURIComponent(
@@ -158,6 +174,21 @@ export const apiClient = {
       )}&term=${encodeURIComponent(q.term)}`,
       "GET"
     );
+  },
+  async getAllClassMarks(q: {
+    class: string;
+    academicYear: string;
+    term: string;
+  }): Promise<Record<string, any[]>> {
+    const data = await request<{ allMarks: Record<string, any[]> }>(
+      `/assessments?class=${encodeURIComponent(
+        q.class
+      )}&year=${encodeURIComponent(q.academicYear)}&term=${encodeURIComponent(
+        q.term
+      )}`,
+      "GET"
+    );
+    return data.allMarks;
   },
   async getStudents(): Promise<StudentRecord[]> {
     return request<StudentRecord[]>("/students", "GET");
