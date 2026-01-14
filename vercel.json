@@ -1,7 +1,20 @@
 {
   "version": 2,
-  "buildCommand": "npm run build && npm run server:build",
-  "framework": null,
-  "builds": [{ "src": "dist/server/index.js", "use": "@vercel/node" }],
-  "routes": [{ "src": "/(.*)", "dest": "dist/server/index.js" }]
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": { "distDir": "dist" }
+    },
+    {
+      "src": "server/index.ts",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/server/index.ts"
+    }
+  ]
 }
