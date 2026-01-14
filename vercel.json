@@ -4,13 +4,11 @@
   "outputDirectory": "dist",
   "framework": null,
   "builds": [
-    {
-      "src": "dist/server/index.js",
-      "use": "@vercel/node"
-    }
+    { "src": "dist/server/index.js", "use": "@vercel/node" },
+    { "src": "dist/**", "use": "@vercel/static" }
   ],
   "routes": [
     { "src": "/api/(.*)", "dest": "dist/server/index.js" },
-    { "src": "/(.*)", "dest": "/" }
+    { "src": "/(.*)", "dest": "/dist/$1" }
   ]
 }
