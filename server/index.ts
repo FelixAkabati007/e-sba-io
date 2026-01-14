@@ -31,6 +31,22 @@ import attendanceRouter from "./routes/attendance";
 import { seedAuth } from "./services/auth";
 import { initAttendanceDB } from "./services/attendance";
 
+const isVercel = !!process.env.VERCEL;
+
+let initPromise: Promise<void> | null = null;
+async function ensureInitialized(): Promise<void> {
+  if (!initPromise) {
+    initPromise = (async () => {
+      await seedAuth();
+      await initAttendanceDB();
+    })().catch((err) => {
+      console.error("Initialisation failed", err);
+      initPromise = null;
+    });
+  }
+  await initPromise;
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
@@ -46,6 +62,13 @@ app.use("/api/progress", progressRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/sync", syncRouter);
 // app.use("/api/assessrepo", assessRepoRouter); // Deprecated in favor of direct SQL
+
+if (isVercel) {
+  app.use(async (_req, _res, next) => {
+    await ensureInitialized();
+    next();
+  });
+}
 
 // Serve built client app (dist) for production deployments
 app.use(express.static(path.join(process.cwd(), "dist")));
@@ -697,7 +720,6 @@ app.get(/.*/, (_req: Request, res: Response) => {
     res.status(404).send("Not Found");
   }
 });
-const isVercel = !!process.env.VERCEL;
 if (!isVercel) {
   app.listen(port, async () => {
     const conn =
@@ -713,8 +735,7 @@ if (!isVercel) {
       console.warn("No database connection string found.");
     }
     console.log(`[server] listening on http://localhost:${port}`);
-    await seedAuth();
-    await initAttendanceDB();
+    await ensureInitialized();
     setInterval(
       () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
       60 * 60 * 1000
