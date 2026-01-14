@@ -697,26 +697,29 @@ app.get(/.*/, (_req: Request, res: Response) => {
     res.status(404).send("Not Found");
   }
 });
-app.listen(port, async () => {
-  const conn =
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.NEON_DATABASE_URL;
-  if (conn) {
-    const host = conn.includes("@")
-      ? conn.split("@")[1].split("/")[0]
-      : "configured";
-    console.log("Database configured:", host);
-  } else {
-    console.warn("No database connection string found.");
-  }
-  console.log(`[server] listening on http://localhost:${port}`);
-  await seedAuth();
-  await initAttendanceDB();
-  setInterval(
-    () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
-    60 * 60 * 1000
-  );
-});
+const isVercel = !!process.env.VERCEL;
+if (!isVercel) {
+  app.listen(port, async () => {
+    const conn =
+      process.env.DATABASE_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.NEON_DATABASE_URL;
+    if (conn) {
+      const host = conn.includes("@")
+        ? conn.split("@")[1].split("/")[0]
+        : "configured";
+      console.log("Database configured:", host);
+    } else {
+      console.warn("No database connection string found.");
+    }
+    console.log(`[server] listening on http://localhost:${port}`);
+    await seedAuth();
+    await initAttendanceDB();
+    setInterval(
+      () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
+      60 * 60 * 1000
+    );
+  });
+}
 
 export default app;
