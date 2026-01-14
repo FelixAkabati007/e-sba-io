@@ -4125,8 +4125,40 @@ export default function App() {
                       </div>
                       <div className="w-full bg-emerald-800/30 rounded-full h-1">
                         <div
-                          className="bg-white h-1 rounded-full transition-all duration-300"
-                          style={{ width: `${importProgress}%` }}
+                          className={`bg-white h-1 rounded-full transition-all duration-300 ${(() => {
+                            const value = Math.max(
+                              0,
+                              Math.min(100, Math.round(importProgress))
+                            );
+                            const steps = [
+                              "w-[0%]",
+                              "w-[5%]",
+                              "w-[10%]",
+                              "w-[15%]",
+                              "w-[20%]",
+                              "w-[25%]",
+                              "w-[30%]",
+                              "w-[35%]",
+                              "w-[40%]",
+                              "w-[45%]",
+                              "w-[50%]",
+                              "w-[55%]",
+                              "w-[60%]",
+                              "w-[65%]",
+                              "w-[70%]",
+                              "w-[75%]",
+                              "w-[80%]",
+                              "w-[85%]",
+                              "w-[90%]",
+                              "w-[95%]",
+                              "w-[100%]",
+                            ];
+                            const idx = Math.min(
+                              steps.length - 1,
+                              Math.round(value / 5)
+                            );
+                            return steps[idx];
+                          })()}`}
                         />
                       </div>
                     </div>

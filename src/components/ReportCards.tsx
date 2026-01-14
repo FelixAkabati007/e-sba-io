@@ -51,8 +51,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
   const [talentRemarkError, setTalentRemarkError] = useState<string | null>(
     null
   );
-  const [teacherRemarkError] = useState<string | null>(null);
-  void teacherRemarkError;
+  const [, setTeacherRemarkError] = useState<string | null>(null);
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
   const [docStatus, setDocStatus] = useState("");
   const [headSignatureDataUrl, setHeadSignatureDataUrl] = useState<
@@ -615,6 +614,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
           const col1X = 15;
           const col2X = 77.5;
           const colWidth = 55;
+          const col3X = col2X + colWidth + 10;
 
           // --- Column 1: Grading System ---
           doc.setFontSize(8);

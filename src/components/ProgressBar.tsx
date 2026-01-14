@@ -26,7 +26,7 @@ const ProgressBar: React.FC<ProgressProps> = ({
   const [data, setData] = useState<ProgressData | null>(null);
   const [showDetails, setShowDetails] = useState(false);
 
-  const fetchProgress = async (signal?: AbortSignal) => {
+  const fetchProgress = async () => {
     if (!academicYear || !term || !className) return;
     if (scope === "subject" && !subjectName) return;
 
@@ -46,7 +46,6 @@ const ProgressBar: React.FC<ProgressProps> = ({
         headers: {
           Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-        signal,
       });
 
       if (res.ok) {
@@ -54,33 +53,67 @@ const ProgressBar: React.FC<ProgressProps> = ({
         setData(json);
       }
     } catch (e) {
-      if ((e as Error).name === "AbortError") return;
       console.error("Failed to fetch progress", e);
     }
   };
 
   useEffect(() => {
-    const controller = new AbortController();
-    fetchProgress(controller.signal);
+    let cancelled = false;
 
-    // Poll every 30 seconds
+    const load = async () => {
+      await fetchProgress();
+    };
+
+    load();
+
     const timer = setInterval(() => {
-      fetchProgress(controller.signal);
+      if (!cancelled) {
+        void fetchProgress();
+      }
     }, 30000);
 
     return () => {
-      controller.abort();
+      cancelled = true;
       clearInterval(timer);
     };
   }, [scope, className, subjectName, academicYear, term]);
 
   if (!data) return null;
 
-  // Determine color based on percentage
   const getColor = (p: number) => {
     if (p < 30) return "bg-red-500";
     if (p < 70) return "bg-yellow-500";
     return "bg-green-500";
+  };
+
+  const widthClasses = [
+    "w-[0%]",
+    "w-[5%]",
+    "w-[10%]",
+    "w-[15%]",
+    "w-[20%]",
+    "w-[25%]",
+    "w-[30%]",
+    "w-[35%]",
+    "w-[40%]",
+    "w-[45%]",
+    "w-[50%]",
+    "w-[55%]",
+    "w-[60%]",
+    "w-[65%]",
+    "w-[70%]",
+    "w-[75%]",
+    "w-[80%]",
+    "w-[85%]",
+    "w-[90%]",
+    "w-[95%]",
+    "w-[100%]",
+  ];
+
+  const getWidthClass = (p: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(p)));
+    const index = Math.min(widthClasses.length - 1, Math.round(clamped / 5));
+    return widthClasses[index];
   };
 
   return (
@@ -100,8 +133,7 @@ const ProgressBar: React.FC<ProgressProps> = ({
         <div
           className={`h-3 rounded-full transition-all duration-500 ${getColor(
             data.progress
-          )}`}
-          style={{ width: `${data.progress}%` }}
+          )} ${getWidthClass(data.progress)}`}
         />
       </div>
 
