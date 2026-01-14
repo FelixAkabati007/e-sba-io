@@ -184,8 +184,7 @@ export const apiClient = {
       "GET",
       undefined,
       undefined,
-      2,
-      true // Enable cache
+      2
     );
   },
   async getAllClassMarks(q: {
@@ -204,8 +203,7 @@ export const apiClient = {
       "GET",
       undefined,
       undefined,
-      2,
-      true // Enable cache
+      2
     );
     return data.allMarks;
   },
@@ -215,8 +213,7 @@ export const apiClient = {
       "GET",
       undefined,
       undefined,
-      2,
-      true
+      2
     );
   },
   async upsertStudent(student: StudentRecord): Promise<void> {

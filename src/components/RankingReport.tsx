@@ -32,10 +32,7 @@ export const RankingReport: React.FC<RankingReportProps> = ({
     ? ((raw as { data?: RankingRow[] }).data as RankingRow[])
     : [];
 
-  const total =
-    typeof (raw as { total?: number }).total === "number"
-      ? (raw as { total: number }).total
-      : rows.length;
+  void raw;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">

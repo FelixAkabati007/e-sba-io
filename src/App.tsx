@@ -9,11 +9,8 @@ import {
   Save,
   Menu,
   ArrowLeft,
-  Search,
-  GraduationCap,
   LayoutGrid,
   Database,
-  Printer,
   X,
   CheckCircle,
   AlertCircle,
@@ -24,7 +21,6 @@ import {
   AlertTriangle,
   Settings,
   Upload,
-  Image as ImageIcon,
   FileSpreadsheet,
   Download,
   FileIcon,
@@ -43,7 +39,7 @@ const ReportCards = React.lazy(() => import("./components/ReportCards"));
 
 import { logger } from "./lib/logger";
 import { apiClient } from "./lib/apiClient";
-import { calculateGrade, getOrdinal, GRADING_SYSTEM } from "./lib/grading";
+import { calculateGrade } from "./lib/grading";
 import { AssessmentMarkRow, RankingData, RankingRow } from "./lib/apiTypes";
 import { SyncClient } from "./lib/syncClient";
 import { offlineDb, type OfflineStudent } from "./lib/offlineDb";
@@ -58,7 +54,7 @@ import {
   saveUploadedFile,
   saveDownloadedContent,
 } from "./lib/storage";
-import SignatureUpload from "./components/SignatureUpload";
+
 // Unused imports removed: saveMarksSession, loadMarksSession, subscribeAssessments, saveUploadedFile, saveDownloadedContent, list, getUsage, getData, remove, cleanup, kvGet, kvSet, kvRemove
 import { SystemConfigStorage, type SchoolConfig } from "./lib/configStorage";
 import { buildImportedStudents } from "./lib/masterdbImport";
@@ -695,6 +691,10 @@ export default function App() {
   // removed legacy subscribeAssessments
   type ImportedRow = Record<string, unknown>;
   const [importedPreview, setImportedPreview] = useState<ImportedRow[]>([]);
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(
+    null
+  );
+  const [importProgress, setImportProgress] = useState(0);
 
   const importFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -1053,6 +1053,13 @@ export default function App() {
         });
         const ref = worksheet["!ref"] || "";
         const range = XLSX.utils.decode_range(ref);
+        type Cell = {
+          w?: string;
+          t?: string;
+          v?: unknown;
+          f?: string;
+          z?: string | number;
+        };
         const cells: Array<{
           addr: string;
           r: number;
@@ -1066,11 +1073,11 @@ export default function App() {
         for (let R = range.s.r; R <= range.e.r; R++) {
           for (let C = range.s.c; C <= range.e.c; C++) {
             const addr = XLSX.utils.encode_cell({ r: R, c: C });
-            const cell = (
-              worksheet as unknown as Record<string, XLSX.CellObject>
-            )[addr];
+            const cell = (worksheet as unknown as Record<string, Cell>)[addr];
             if (!cell) continue;
-            const w = cell.w || XLSX.utils.format_cell(cell);
+            const w =
+              cell.w ||
+              (cell.v !== undefined && cell.v !== null ? String(cell.v) : "");
             cells.push({
               addr,
               r: R,
@@ -1419,39 +1426,48 @@ export default function App() {
     setDocStatus("Generating PDF...");
     setTimeout(() => {
       try {
-        const doc = new jsPDF();
-        doc.setFontSize(16);
-        doc.text(schoolConfig.name, 14, 15);
-        doc.setFontSize(10);
-        doc.text(`Master Student Database - ${selectedClass}`, 14, 22);
-        doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 27);
-
-        const tableColumn = [
-          "ID",
-          "Name",
-          "Gender",
-          "DOB",
-          "Contact",
-          "Status",
-        ];
-        const tableRows = students
-          .filter((s) => s.class === selectedClass)
-          .map((s) => [
-            s.id,
-            `${s.surname}, ${s.firstName} ${s.middleName}`,
-            s.gender,
-            s.dob,
-            s.guardianContact,
-            s.status,
-          ]);
-        (doc as jsPDF & { autoTable: (opts: unknown) => void }).autoTable({
-          head: [tableColumn],
-          body: tableRows,
-          startY: 35,
-          styles: { fontSize: 8 },
-          headStyles: { fillColor: [41, 128, 185] },
-        });
-        doc.save(`MasterDB_${selectedClass}.pdf`);
+        const run = async () => {
+          const { jsPDF } = await import("jspdf");
+          const { default: autoTable } = await import("jspdf-autotable");
+          const doc = new jsPDF();
+          doc.setFontSize(16);
+          doc.text(schoolConfig.name, 14, 15);
+          doc.setFontSize(10);
+          doc.text(`Master Student Database - ${selectedClass}`, 14, 22);
+          doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 27);
+          const tableColumn = [
+            "ID",
+            "Name",
+            "Gender",
+            "DOB",
+            "Contact",
+            "Status",
+          ];
+          const tableRows = students
+            .filter((s) => s.class === selectedClass)
+            .map((s) => [
+              s.id,
+              `${s.surname}, ${s.firstName} ${s.middleName}`,
+              s.gender,
+              s.dob,
+              s.guardianContact,
+              s.status,
+            ]);
+          (
+            autoTable as unknown as (
+              doc: InstanceType<typeof jsPDF>,
+              opts: unknown
+            ) => void
+          )(doc, {
+            head: [tableColumn],
+            body: tableRows,
+            startY: 35,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [41, 128, 185] },
+          });
+          doc.save(`MasterDB_${selectedClass}.pdf`);
+        };
+        void run();
       } catch (e) {
         logger.error("PDF export error", e);
       }
@@ -1462,64 +1478,7 @@ export default function App() {
   // Subject PDF export removed in favor of structured template downloads
 
   useEffect(() => {
-    (async () => {
-      try {
-        if (schoolConfig.headSignatureUrl) {
-          const url = schoolConfig.headSignatureUrl;
-          if (url.startsWith("data:image/")) {
-            if (url.startsWith("data:image/svg+xml")) {
-              const img = new Image();
-              img.onload = () => {
-                const canvas = document.createElement("canvas");
-                const ctx = canvas.getContext("2d");
-                const maxW = 600;
-                const ratio = img.width > 0 ? Math.min(1, maxW / img.width) : 1;
-                const w = Math.round((img.width || maxW) * ratio);
-                const h = Math.round((img.height || maxW / 3) * ratio);
-                canvas.width = w;
-                canvas.height = h;
-                ctx?.drawImage(img, 0, 0, w, h);
-                setHeadSignatureDataUrl(canvas.toDataURL("image/png"));
-              };
-              img.src = url;
-            } else {
-              setHeadSignatureDataUrl(url);
-            }
-          } else {
-            const resp = await fetch(url);
-            const blob = await resp.blob();
-            const reader = new FileReader();
-            reader.onload = () => {
-              const data = reader.result as string;
-              if (data && data.startsWith("data:image/svg+xml")) {
-                const img = new Image();
-                img.onload = () => {
-                  const canvas = document.createElement("canvas");
-                  const ctx = canvas.getContext("2d");
-                  const maxW = 600;
-                  const ratio =
-                    img.width > 0 ? Math.min(1, maxW / img.width) : 1;
-                  const w = Math.round((img.width || maxW) * ratio);
-                  const h = Math.round((img.height || maxW / 3) * ratio);
-                  canvas.width = w;
-                  canvas.height = h;
-                  ctx?.drawImage(img, 0, 0, w, h);
-                  setHeadSignatureDataUrl(canvas.toDataURL("image/png"));
-                };
-                img.src = data;
-              } else {
-                setHeadSignatureDataUrl(data);
-              }
-            };
-            reader.readAsDataURL(blob);
-          }
-        } else {
-          setHeadSignatureDataUrl(null);
-        }
-      } catch {
-        setHeadSignatureDataUrl(null);
-      }
-    })();
+    void schoolConfig.headSignatureUrl;
   }, [schoolConfig.headSignatureUrl]);
 
   const handleInputChange = (
@@ -2190,8 +2149,6 @@ export default function App() {
                     100
                   ).toFixed(1) + "%"
                 : "-";
-
-            const maxCount = Math.max(...Object.values(gradeDistribution), 1);
 
             return (
               <div className="space-y-6">

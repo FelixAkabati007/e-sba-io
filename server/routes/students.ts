@@ -2,11 +2,13 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import {
   getAllStudents,
   upsertStudent,
   deleteStudent,
 } from "../services/students";
+import type { Student } from "../services/students";
 import {
   authenticateToken,
   requireRole,
@@ -194,9 +196,9 @@ router.post(
       writeStream.end();
 
       // Wait for stream to finish
-      await new Promise((resolve, reject) => {
-        writeStream.on("finish", resolve);
-        writeStream.on("error", reject);
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on("finish", () => resolve());
+        writeStream.on("error", (err) => reject(err));
       });
 
       fs.rmdirSync(dir); // Remove temp dir
@@ -209,27 +211,38 @@ router.post(
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
 
       // Transform keys to match upsertStudent expectations
-      // Assuming keys match importedPreview logic in frontend:
-      // Surname, First Name, Gender, Class
-      const processed = [];
-      for (const row of jsonData as any[]) {
-        const newRow: any = {};
-        // Normalize keys
+      const processed: Student[] = [];
+      for (const row of jsonData as Array<Record<string, unknown>>) {
+        const map: Record<string, unknown> = {};
         Object.keys(row).forEach((k) => {
-          const lower = k.toLowerCase().trim();
-          if (lower.includes("surname")) newRow.surname = row[k];
-          else if (lower.includes("first")) newRow.firstName = row[k];
-          else if (lower.includes("gender")) newRow.gender = row[k];
-          else if (lower.includes("class")) newRow.class = row[k];
-          else if (lower === "id") newRow.id = row[k];
+          map[k.toLowerCase().trim()] = (row as Record<string, unknown>)[k];
         });
-
-        if (newRow.surname && newRow.firstName && newRow.class) {
-          // Auto-generate ID if missing (simple logic)
-          // Ideally, upsertStudent handles ID generation if not provided or if "NEW"
-          // Let's defer to upsertStudent logic
-          processed.push(newRow);
-        }
+        const surname = String(map["surname"] ?? "").toUpperCase();
+        const firstName = String(
+          map["first name"] ?? map["firstname"] ?? ""
+        ).trim();
+        const genderRaw = String(map["gender"] ?? "").toLowerCase();
+        const gender = (
+          genderRaw.includes("f") ? "Female" : "Male"
+        ) as Student["gender"];
+        const klass = String(map["class"] ?? "").trim();
+        const id =
+          String(map["id"] ?? "").trim() ||
+          crypto.randomUUID().replace(/-/g, "");
+        if (!surname || !firstName || !klass) continue;
+        const student: Student = {
+          id,
+          surname,
+          firstName,
+          middleName: "",
+          gender,
+          dateOfBirth: "2000-01-01",
+          dob: "2000-01-01",
+          guardianContact: "",
+          class: klass,
+          status: "Active",
+        };
+        processed.push(student);
       }
 
       // Batch Insert

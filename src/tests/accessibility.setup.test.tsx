@@ -22,7 +22,7 @@ describe("Accessibility setup section", () => {
   });
 
   it("associates signature toggle with its label", async () => {
-    (apiClient.request as any).mockImplementation((url: string) => {
+    vi.mocked(apiClient.request).mockImplementation((url: string) => {
       if (url === "/auth/me") {
         return Promise.resolve({
           user: {

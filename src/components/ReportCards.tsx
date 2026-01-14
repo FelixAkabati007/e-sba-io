@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Search,
   Printer,
@@ -8,19 +8,12 @@ import {
 } from "lucide-react";
 import { apiClient } from "../lib/apiClient";
 import { logger } from "../lib/logger";
-import {
-  Student,
-  Marks,
-  User,
-  AssessmentMarkRow,
-} from "../lib/sharedTypes";
+import { Student, Marks } from "../lib/sharedTypes";
+import type { User } from "../context/AuthContext";
+import type { AssessmentMarkRow } from "../lib/apiTypes";
 import { SchoolConfig } from "../lib/configStorage";
-import {
-  GradeConfig,
-  calculateGrade,
-  getOrdinal,
-} from "../lib/grading";
-import { SUBJECTS, SUBJECT_DISPLAY_NAMES } from "../lib/constants";
+import { GradeConfig, calculateGrade, getOrdinal } from "../lib/grading";
+import { SUBJECTS } from "../lib/constants";
 import ProgressBar from "./ProgressBar";
 
 interface ReportCardsProps {
@@ -55,11 +48,16 @@ const ReportCards: React.FC<ReportCardsProps> = ({
   const [talentRemarkOther, setTalentRemarkOther] = useState("");
   const [teacherRemark, setTeacherRemark] = useState("");
   const [teacherRemarkOther, setTeacherRemarkOther] = useState("");
-  const [talentRemarkError, setTalentRemarkError] = useState<string | null>(null);
-  const [teacherRemarkError, setTeacherRemarkError] = useState<string | null>(null);
+  const [talentRemarkError, setTalentRemarkError] = useState<string | null>(
+    null
+  );
+  const [teacherRemarkError] = useState<string | null>(null);
+  void teacherRemarkError;
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
   const [docStatus, setDocStatus] = useState("");
-  const [headSignatureDataUrl, setHeadSignatureDataUrl] = useState<string | null>(null);
+  const [headSignatureDataUrl, setHeadSignatureDataUrl] = useState<
+    string | null
+  >(null);
   const [reportDataLoaded, setReportDataLoaded] = useState(false);
   const [isTalentSaving, setIsTalentSaving] = useState(false);
 
@@ -316,7 +314,15 @@ const ReportCards: React.FC<ReportCardsProps> = ({
       }
     }, 1000);
     return () => clearTimeout(timer);
-  }, [attendancePresent, attendanceTotal, effectiveReportId, academicYear, term, reportDataLoaded, user]);
+  }, [
+    attendancePresent,
+    attendanceTotal,
+    effectiveReportId,
+    academicYear,
+    term,
+    reportDataLoaded,
+    user,
+  ]);
 
   const handleSaveTalent = async () => {
     const sid = effectiveReportId;
@@ -415,7 +421,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
       try {
         const { jsPDF } = await import("jspdf");
         const { default: autoTable } = await import("jspdf-autotable");
-        
+
         const doc = new jsPDF();
         targetStudents.forEach((student, index) => {
           if (index > 0) doc.addPage();
@@ -581,8 +587,8 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             ];
           });
           const PAGE_MARGIN = 10;
-          
-          (autoTable as any)(doc, {
+
+          (autoTable as unknown as (doc: unknown, opts: unknown) => void)(doc, {
             head: [
               [
                 "Subject",
@@ -602,11 +608,12 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             styles: { fontSize: 10, valign: "middle", halign: "center" },
             columnStyles: { 0: { halign: "left" }, 6: { halign: "left" } },
           });
-          const y = (doc as any).lastAutoTable.finalY + 10;
+          const y =
+            (doc as unknown as { lastAutoTable: { finalY: number } })
+              .lastAutoTable.finalY + 10;
           const baseY = y;
           const col1X = 15;
           const col2X = 77.5;
-          const col3X = 140;
           const colWidth = 55;
 
           // --- Column 1: Grading System ---
@@ -620,7 +627,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             band.desc,
           ]);
 
-          (autoTable as any)(doc, {
+          (autoTable as unknown as (doc: unknown, opts: unknown) => void)(doc, {
             head: [["Grade", "Range", "Remark"]],
             body: gradeRows,
             startY: baseY + 4,
@@ -646,8 +653,6 @@ const ReportCards: React.FC<ReportCardsProps> = ({
               2: { cellWidth: "auto" },
             },
           });
-
-          const col1End = (doc as any).lastAutoTable.finalY;
 
           // --- Column 2: Student Report ---
           let y2 = baseY;
@@ -756,14 +761,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             )
               ? "JPEG"
               : "PNG";
-            doc.addImage(
-              headSignatureDataUrl,
-              fmt,
-              col3X + 10,
-              y3,
-              30,
-              15
-            );
+            doc.addImage(headSignatureDataUrl, fmt, col3X + 10, y3, 30, 15);
           }
           y3 += 20;
 
@@ -855,7 +853,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
           <span>Batch Print ({filteredStudents.length})</span>
         </button>
       </div>
-      
+
       {docStatus && (
         <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-lg text-sm text-center animate-pulse">
           {docStatus}
@@ -917,8 +915,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             {academicYear}
           </div>
           <div>
-            <span className="font-bold text-slate-500">DOB:</span>{" "}
-            {student.dob}
+            <span className="font-bold text-slate-500">DOB:</span> {student.dob}
           </div>
           <div>
             <span className="font-bold text-slate-500">Contact:</span>{" "}
