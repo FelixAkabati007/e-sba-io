@@ -2,8 +2,15 @@ import request from "supertest";
 import fs from "fs";
 import path from "path";
 import * as XLSX from "xlsx";
+import jwt from "jsonwebtoken";
 import app from "../index";
 import { describe, it, expect } from "vitest";
+
+const SECRET = process.env.JWT_SECRET || "default_secret";
+const mockToken = jwt.sign(
+  { id: 1, username: "test_admin", role: "HEAD" },
+  SECRET
+);
 
 function makeSheet(): string {
   const rows = [
@@ -42,6 +49,7 @@ describe("/api/assessments/upload", () => {
     const file = makeSheet();
     const res = await request(app)
       .post("/api/assessments/upload")
+      .set("Authorization", `Bearer ${mockToken}`)
       .query({
         subject: "Mathematics",
         academicYear: "2025/2026",

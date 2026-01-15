@@ -388,7 +388,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
         const m = marks[s.id]?.[subj];
         if (!m) return { id: s.id, score: 0, hasMark: false };
         const rawSBA =
-          ((m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project) / 80) *
+          ((m.cat1 + m.cat2 + m.group + m.project) / 60) *
           schoolConfig.catWeight;
         const rawExam = (m.exam / 100) * schoolConfig.examWeight;
         const score = Math.round(rawSBA + rawExam);
@@ -569,9 +569,8 @@ const ReportCards: React.FC<ReportCardsProps> = ({
               project: 0,
               exam: 0,
             };
-            const rawSBA =
-              m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
-            const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+            const rawSBA = m.cat1 + m.cat2 + m.group + m.project;
+            const scaledSBA = (rawSBA / 60) * schoolConfig.catWeight;
             const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
             const final = Math.round(scaledSBA + scaledExam);
             const g = calculateGrade(final);
@@ -970,8 +969,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                     </tr>
                   );
                 const rawSBA =
-                  ((m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project) /
-                    80) *
+                  ((m.cat1 + m.cat2 + m.group + m.project) / 60) *
                   schoolConfig.catWeight;
                 const rawExam = (m.exam / 100) * schoolConfig.examWeight;
                 const final = Math.round(rawSBA + rawExam);

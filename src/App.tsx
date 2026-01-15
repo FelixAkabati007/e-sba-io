@@ -724,12 +724,12 @@ export default function App() {
 
   const [students, setStudents] = useState<Student[]>([]);
   const existingStudentIds = useMemo(
-    () => new Set(students.map((s) => s.id)),
+    () => new Set((students || []).map((s) => s.id)),
     [students]
   );
   const filteredStudents = useMemo(
     () =>
-      students.filter(
+      (students || []).filter(
         (s) =>
           s.class === selectedClass &&
           (s.status === "Active" || s.status === "Inactive")
@@ -769,15 +769,10 @@ export default function App() {
         if (m.project !== undefined) stats.project.push(m.project);
 
         const rawSBA =
-          (m.cat1 || 0) +
-          (m.cat2 || 0) +
-          (m.cat3 || 0) +
-          (m.cat4 || 0) +
-          (m.group || 0) +
-          (m.project || 0);
+          (m.cat1 || 0) + (m.cat2 || 0) + (m.group || 0) + (m.project || 0);
         stats.rawSBA.push(rawSBA);
 
-        const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+        const scaledSBA = (rawSBA / 60) * schoolConfig.catWeight;
         stats.scaledSBA.push(scaledSBA);
 
         if (m.exam !== undefined) stats.exam.push(m.exam);
@@ -953,9 +948,8 @@ export default function App() {
   const clamp = (f: string, n: number) => {
     const v = Number.isFinite(n) ? n : 0;
     if (f === "exam") return Math.max(0, Math.min(100, v));
-    if (f === "group" || f === "project") return Math.max(0, Math.min(20, v));
-    if (f === "cat1" || f === "cat2" || f === "cat3" || f === "cat4")
-      return Math.max(0, Math.min(10, v));
+    if (["cat1", "cat2", "group", "project"].includes(f))
+      return Math.max(0, Math.min(15, v));
     return Math.max(0, v);
   };
 
@@ -1696,7 +1690,7 @@ export default function App() {
     if (!user) return null;
 
     const calculateSubjectProgress = (subj: string, cls: string) => {
-      const studentsInClass = students.filter(
+      const studentsInClass = (students || []).filter(
         (s) => s.class === cls && s.status === "Active"
       );
       if (studentsInClass.length === 0) return 0;
@@ -2114,9 +2108,8 @@ export default function App() {
             filteredStudents.forEach((s) => {
               const m = marks[s.id]?.[activeSubject];
               if (m) {
-                const rawSBA =
-                  m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
-                const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+                const rawSBA = m.cat1 + m.cat2 + m.group + m.project;
+                const scaledSBA = (rawSBA / 60) * schoolConfig.catWeight;
                 const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
                 const final = Math.round(scaledSBA + scaledExam);
                 totalFinal += final;
@@ -2263,9 +2256,8 @@ export default function App() {
                   project: 0,
                   exam: 0,
                 };
-                const rawSBA =
-                  m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
-                const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+                const rawSBA = m.cat1 + m.cat2 + m.group + m.project;
+                const scaledSBA = (rawSBA / 60) * schoolConfig.catWeight;
                 const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
                 const final = Math.round(scaledSBA + scaledExam);
                 const g = calculateGrade(final);
@@ -2611,9 +2603,8 @@ export default function App() {
             project: 0,
             exam: 0,
           };
-          const rawSBA =
-            m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
-          const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+          const rawSBA = m.cat1 + m.cat2 + m.group + m.project;
+          const scaledSBA = (rawSBA / 60) * schoolConfig.catWeight;
           const scaledExam = (m.exam / 100) * schoolConfig.examWeight;
           const final = Math.round(scaledSBA + scaledExam);
           const g = calculateGrade(final);
@@ -2663,11 +2654,10 @@ export default function App() {
             tGroup += m.group || 0;
             tProj += m.project || 0;
 
-            const rawSBA =
-              m.cat1 + m.cat2 + m.cat3 + m.cat4 + m.group + m.project;
+            const rawSBA = m.cat1 + m.cat2 + m.group + m.project;
             tRawSBA += rawSBA;
 
-            const scaledSBA = (rawSBA / 80) * schoolConfig.catWeight;
+            const scaledSBA = (rawSBA / 60) * schoolConfig.catWeight;
             tScaledSBA += scaledSBA;
 
             tExam += m.exam || 0;

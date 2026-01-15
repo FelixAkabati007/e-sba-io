@@ -33,15 +33,15 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div className="bg-blue-600 p-8 text-center">
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-slate-800 p-8 text-center">
           <img
             src="/logo.png"
             alt="Logo"
             className="mx-auto w-32 h-32 object-contain mb-4"
           />
-          <h1 className="text-2xl font-bold text-white">E-SBA System</h1>
-          <p className="text-blue-100 mt-2">Secure Assessment Portal</p>
+          <h1 className="text-2xl font-bold text-slate-200">E-SBA System</h1>
+          <p className="text-slate-300 mt-2">Secure Assessment Portal</p>
         </div>
 
         <div className="p-8">
@@ -54,7 +54,7 @@ const Login: React.FC = () => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-slate-900 mb-1">
                 Username
               </label>
               <div className="relative">
@@ -73,7 +73,7 @@ const Login: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+              <label className="block text-sm font-medium text-slate-900 mb-1">
                 Password
               </label>
               <div className="relative">
@@ -94,7 +94,7 @@ const Login: React.FC = () => {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
+              className="w-full flex justify-center py-2.5 px-4 border border-slate-700 rounded-lg shadow-sm text-sm font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-70 disabled:cursor-not-allowed transition-all"
             >
               {isLoading ? (
                 <Loader2 className="animate-spin h-5 w-5" />
@@ -104,7 +104,7 @@ const Login: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-slate-500">
+          <div className="mt-6 text-center text-sm text-slate-400">
             Contact administrator if you forgot your credentials.
           </div>
         </div>

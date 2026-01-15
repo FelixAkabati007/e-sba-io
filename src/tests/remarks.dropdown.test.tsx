@@ -38,12 +38,24 @@ describe("Remarks dropdowns", () => {
         role: "HEAD",
       },
     });
-    vi.mocked(apiClient.getStudents).mockResolvedValue([]);
+    vi.mocked(apiClient.getStudents).mockResolvedValue([
+      {
+        id: "S001",
+        surname: "Doe",
+        firstName: "John",
+        middleName: "",
+        gender: "Male",
+        dob: "2010-01-01",
+        guardianContact: "",
+        class: "JHS 1(A)",
+        status: "Active",
+      },
+    ]);
     vi.mocked(apiClient.getTalentRemarks).mockResolvedValue({ groups: [] });
   });
 
   it("Talent remark is required and shows error when empty", async () => {
-    const { getByLabelText, findByRole } = render(
+    const { findByRole } = render(
       <AuthProvider>
         <App />
       </AuthProvider>
@@ -52,21 +64,18 @@ describe("Remarks dropdowns", () => {
     const reportBtn = await findByRole("button", { name: /Report Cards/i });
     fireEvent.click(reportBtn);
 
-    const sel = getByLabelText("Select template");
-    expect(sel).toBeInTheDocument();
+    const talentSelect = await screen.findByLabelText(
+      "Talent and interest remark"
+    );
+    expect(talentSelect).toBeInTheDocument();
 
-    // Assuming the template change triggers state update
-    // fireEvent.change(sel, { target: { value: "" } });
-    // Wait, the test says "value: ''". Does that mean selecting nothing?
-    // Or is it clearing?
-    // Let's keep original logic.
+    // Select a valid option then clear it to trigger validation
+    fireEvent.change(talentSelect, {
+      target: { value: "Shows exceptional talent in subject activities" },
+    });
+    fireEvent.change(talentSelect, { target: { value: "" } });
 
-    fireEvent.change(sel, { target: { value: "" } });
-
-    const teacherSel = screen.getAllByLabelText(
-      "Select remark"
-    )[0] as HTMLSelectElement;
-    expect(teacherSel).toBeInTheDocument();
+    expect(talentSelect).toHaveClass("border-red-500");
   });
 
   it("Talent remark Other enforces 20+ characters", async () => {
@@ -79,8 +88,10 @@ describe("Remarks dropdowns", () => {
     const reportBtn = await findByRole("button", { name: /Report Cards/i });
     fireEvent.click(reportBtn);
 
-    const sel = getByLabelText("Select template");
-    fireEvent.change(sel, { target: { value: "Other" } });
+    const talentSelect = await screen.findByLabelText(
+      "Talent and interest remark"
+    );
+    fireEvent.change(talentSelect, { target: { value: "Other" } });
 
     const input = getByLabelText("Custom talent remark");
     fireEvent.change(input, { target: { value: "too short" } });
@@ -99,9 +110,8 @@ describe("Remarks dropdowns", () => {
     const reportBtn = await findByRole("button", { name: /Report Cards/i });
     fireEvent.click(reportBtn);
 
-    const underscoresNode = screen.getAllByTestId("headmaster-underscores")[0];
-    expect(underscoresNode).toBeInTheDocument();
-    const count = underscoresNode?.textContent?.match(/_/g)?.length ?? 0;
+    const underscoresNode = await screen.findByTestId("headmaster-underscores");
+    const count = underscoresNode.textContent?.match(/_/g)?.length ?? 0;
     expect(count).toBe(100);
   });
 });

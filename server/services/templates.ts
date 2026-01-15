@@ -46,8 +46,6 @@ export async function buildAssessmentTemplate(
     "first_name",
     "cat1",
     "cat2",
-    "cat3",
-    "cat4",
     "group",
     "project",
     "exam",
@@ -58,8 +56,6 @@ export async function buildAssessmentTemplate(
     first_name: s.first_name,
     cat1: "",
     cat2: "",
-    cat3: "",
-    cat4: "",
     group: "",
     project: "",
     exam: "",
@@ -78,8 +74,6 @@ export async function buildAssessmentTemplate(
     { wch: 6 },
     { wch: 6 },
     { wch: 6 },
-    { wch: 6 },
-    { wch: 8 },
     { wch: 6 },
   ];
 
@@ -138,8 +132,6 @@ export async function buildAssessmentTemplateCSV(
       "first_name",
       "cat1",
       "cat2",
-      "cat3",
-      "cat4",
       "group",
       "project",
       "exam",
@@ -151,8 +143,6 @@ export async function buildAssessmentTemplateCSV(
         csvEscape(s.student_id),
         csvEscape(s.surname),
         csvEscape(s.first_name),
-        "",
-        "",
         "",
         "",
         "",
@@ -250,14 +240,12 @@ export async function buildAssessmentTemplateXLSX(
     { header: "first_name", key: "first_name", width: 16 },
     { header: "cat1", key: "cat1", width: 8 },
     { header: "cat2", key: "cat2", width: 8 },
-    { header: "cat3", key: "cat3", width: 8 },
-    { header: "cat4", key: "cat4", width: 8 },
     { header: "group", key: "group", width: 8 },
     { header: "project", key: "project", width: 9 },
     { header: "exam", key: "exam", width: 8 },
   ];
 
-  safeMerge(ws, "A1:J1");
+  safeMerge(ws, "A1:H1");
   const title = ws.getCell("A1");
   title.value = `${
     process.env.SCHOOL_NAME || "E-SBA [JHS]"
@@ -265,13 +253,13 @@ export async function buildAssessmentTemplateXLSX(
   title.alignment = { horizontal: "center", vertical: "middle" };
   title.font = { bold: true, size: 14 };
 
-  safeMerge(ws, "A2:J2");
+  safeMerge(ws, "A2:H2");
   const sub = ws.getCell("A2");
   sub.value = `Class: ${className}  •  Academic Year: ${academicYear}  •  Term: ${term}`;
   sub.alignment = { horizontal: "center", vertical: "middle" };
   sub.font = { size: 11, color: { argb: "FF1F4ED8" } };
 
-  safeMerge(ws, "A3:J3");
+  safeMerge(ws, "A3:H3");
   const meta = ws.getCell("A3");
   meta.value = `Template Generated: ${new Date().toISOString()}`;
   meta.alignment = { horizontal: "center", vertical: "middle" };
@@ -302,8 +290,6 @@ export async function buildAssessmentTemplateXLSX(
       first_name: s.first_name,
       cat1: null,
       cat2: null,
-      cat3: null,
-      cat4: null,
       group: null,
       project: null,
       exam: null,
@@ -331,18 +317,11 @@ export async function buildAssessmentTemplateXLSX(
   dv?.add(`D${start}:G1048576`, {
     type: "whole",
     operator: "between",
-    formulae: [0, 10],
+    formulae: [0, 15],
     allowBlank: true,
     showErrorMessage: true,
   });
-  dv?.add(`H${start}:I1048576`, {
-    type: "whole",
-    operator: "between",
-    formulae: [0, 20],
-    allowBlank: true,
-    showErrorMessage: true,
-  });
-  dv?.add(`J${start}:J1048576`, {
+  dv?.add(`H${start}:H1048576`, {
     type: "whole",
     operator: "between",
     formulae: [0, 100],
@@ -352,8 +331,6 @@ export async function buildAssessmentTemplateXLSX(
 
   ws.getColumn("cat1").outlineLevel = 1;
   ws.getColumn("cat2").outlineLevel = 1;
-  ws.getColumn("cat3").outlineLevel = 1;
-  ws.getColumn("cat4").outlineLevel = 1;
   ws.getColumn("group").outlineLevel = 1;
   ws.getColumn("project").outlineLevel = 1;
   ws.getColumn("exam").outlineLevel = 1;

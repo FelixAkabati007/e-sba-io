@@ -15,9 +15,9 @@ export type Row = {
 const clamp = (f: string, n: number) => {
   const v = Number.isFinite(n) ? n : 0;
   if (f === "exam") return Math.max(0, Math.min(100, v));
-  if (f === "group" || f === "project") return Math.max(0, Math.min(20, v));
+  if (f === "group" || f === "project") return Math.max(0, Math.min(15, v));
   if (["cat1", "cat2", "cat3", "cat4"].includes(f))
-    return Math.max(0, Math.min(10, v));
+    return Math.max(0, Math.min(15, v));
   return Math.max(0, v);
 };
 

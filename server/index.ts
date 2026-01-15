@@ -681,7 +681,7 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
                 COALESCE(a.group_work_score, 0) AS group_work_score,
                 COALESCE(a.project_work_score, 0) AS project_work_score,
                 COALESCE(a.exam_score, 0) AS exam_score,
-                (COALESCE(a.cat1_score,0)+COALESCE(a.cat2_score,0)+COALESCE(a.cat3_score,0)+COALESCE(a.cat4_score,0)+COALESCE(a.group_work_score,0)+COALESCE(a.project_work_score,0)) AS raw_sba_total
+                (COALESCE(a.cat1_score,0)+COALESCE(a.cat2_score,0)+COALESCE(a.group_work_score,0)+COALESCE(a.project_work_score,0)) AS raw_sba_total
          FROM students s
          JOIN classes c ON s.current_class_id = c.class_id
          LEFT JOIN assessments a

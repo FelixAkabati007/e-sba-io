@@ -106,15 +106,16 @@ export async function getRankings(
           s.first_name,
           s.middle_name,
           c.class_name,
-          COALESCE(SUM(
-            COALESCE(a.cat1_score, 0) +
-            COALESCE(a.cat2_score, 0) +
-            COALESCE(a.cat3_score, 0) +
-            COALESCE(a.cat4_score, 0) +
-            COALESCE(a.group_work_score, 0) +
-            COALESCE(a.project_work_score, 0) +
-            COALESCE(a.exam_score, 0)
-          ), 0) as overall_score
+          COALESCE(
+            SUM(
+              COALESCE(a.cat1_score, 0) +
+              COALESCE(a.cat2_score, 0) +
+              COALESCE(a.group_work_score, 0) +
+              COALESCE(a.project_work_score, 0) +
+              COALESCE(a.exam_score, 0)
+            ),
+            0
+          ) as overall_score
         FROM students s
         JOIN classes c ON s.current_class_id = c.class_id
         LEFT JOIN assessments a ON s.student_id = a.student_id AND a.session_id = $2

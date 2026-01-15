@@ -169,15 +169,15 @@ CREATE TABLE IF NOT EXISTS assessments (
   student_id TEXT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
   subject_id INT NOT NULL REFERENCES subjects(subject_id),
   session_id INT NOT NULL REFERENCES academic_sessions(session_id),
-  cat1_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat1_score <= 10),
-  cat2_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat2_score <= 10),
-  cat3_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat3_score <= 10),
-  cat4_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat4_score <= 10),
-  group_work_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (group_work_score <= 20),
-  project_work_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (project_work_score <= 20),
+  cat1_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat1_score <= 15),
+  cat2_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat2_score <= 15),
+  cat3_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat3_score <= 15),
+  cat4_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (cat4_score <= 15),
+  group_work_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (group_work_score <= 15),
+  project_work_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (project_work_score <= 15),
   exam_score NUMERIC(5, 2) NOT NULL DEFAULT 0 CHECK (exam_score <= 100),
   raw_sba_total NUMERIC(5, 2) GENERATED ALWAYS AS (
-    cat1_score + cat2_score + cat3_score + cat4_score + group_work_score + project_work_score
+    cat1_score + cat2_score + group_work_score + project_work_score
   ) STORED,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -290,7 +290,7 @@ SELECT a.assessment_id,
   a.project_work_score,
   a.exam_score,
   (
-    a.cat1_score + a.cat2_score + a.cat3_score + a.cat4_score + a.group_work_score + a.project_work_score
+    a.cat1_score + a.cat2_score + a.group_work_score + a.project_work_score
   ) AS raw_sba_total,
   a.created_at,
   a.updated_at
@@ -412,7 +412,7 @@ SELECT s.student_id,
   a.project_work_score,
   a.exam_score,
   (
-    a.cat1_score + a.cat2_score + a.cat3_score + a.cat4_score + a.group_work_score + a.project_work_score
+    a.cat1_score + a.cat2_score + a.group_work_score + a.project_work_score
   ) AS raw_sba_total
 FROM students s
   JOIN classes c ON s.current_class_id = c.class_id
@@ -438,14 +438,14 @@ CREATE OR REPLACE FUNCTION sp_get_report_card(p_student_id TEXT, p_session_id IN
   ) AS $$ BEGIN RETURN QUERY
 SELECT sub.subject_name,
   (
-    a.cat1_score + a.cat2_score + a.cat3_score + a.cat4_score + a.group_work_score + a.project_work_score
+    a.cat1_score + a.cat2_score + a.group_work_score + a.project_work_score
   ) AS raw_sba_total,
   a.exam_score,
   ROUND(
     (
       (
-        a.cat1_score + a.cat2_score + a.cat3_score + a.cat4_score + a.group_work_score + a.project_work_score
-      ) / 80
+        a.cat1_score + a.cat2_score + a.group_work_score + a.project_work_score
+      ) / 60
     ) * ss.cat_weight_percent,
     1
   ) AS class_weighted,
@@ -454,8 +454,8 @@ SELECT sub.subject_name,
     (
       (
         (
-          a.cat1_score + a.cat2_score + a.cat3_score + a.cat4_score + a.group_work_score + a.project_work_score
-        ) / 80
+          a.cat1_score + a.cat2_score + a.group_work_score + a.project_work_score
+        ) / 60
       ) * ss.cat_weight_percent
     ) + ((a.exam_score / 100) * ss.exam_weight_percent)
   ) AS final_score,
@@ -471,8 +471,8 @@ FROM subjects sub
     (
       (
         (
-          a.cat1_score + a.cat2_score + a.cat3_score + a.cat4_score + a.group_work_score + a.project_work_score
-        ) / 80
+          a.cat1_score + a.cat2_score + a.group_work_score + a.project_work_score
+        ) / 60
       ) * ss.cat_weight_percent
     ) + ((a.exam_score / 100) * ss.exam_weight_percent)
   ) BETWEEN gs.min_score AND gs.max_score

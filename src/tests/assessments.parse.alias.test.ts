@@ -27,7 +27,7 @@ describe("parseAssessmentSheet alias headers", () => {
       "Project Work",
       "Exam Score",
     ];
-    const rows = [["S001", 9, 10, 8, 7, 18, 20, 88]];
+    const rows = [["S001", 9, 10, 8, 7, 15, 15, 88]];
     const filePath = writeWorkbook(headers, rows);
     const { rows: parsed, errors } = await parseAssessmentSheet(filePath);
     expect(errors.length).toBe(0);
@@ -71,7 +71,7 @@ describe("parseAssessmentSheet alias headers", () => {
       "Project Work",
       "Exam Score",
     ];
-    const rows = [["S003", "abc", 10, 8, 7, 18, 20, 88]];
+    const rows = [["S003", "abc", 10, 8, 7, 15, 15, 88]];
     const filePath = writeWorkbook(headers, rows);
     const { rows: parsed, errors } = await parseAssessmentSheet(filePath);
     expect(parsed.length).toBe(1);
