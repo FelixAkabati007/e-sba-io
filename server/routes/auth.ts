@@ -6,6 +6,10 @@ import { AuthRequest, authenticateToken } from "../middleware/auth";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
+const HAS_DB =
+  !!process.env.DATABASE_URL ||
+  !!process.env.POSTGRES_URL ||
+  !!process.env.NEON_DATABASE_URL;
 
 // Login
 router.post("/login", async (req, res) => {
@@ -16,6 +20,50 @@ router.post("/login", async (req, res) => {
     return res
       .status(400)
       .json({ error: "Username and password are required" });
+  }
+
+  // Preview fallback when database is not configured (for Vercel previews)
+  if (!HAS_DB) {
+    const allow = String(process.env.PREVIEW_LOGIN_ALLOW || "0") === "1";
+    if (!allow) {
+      return res
+        .status(503)
+        .json({
+          error:
+            "Service unavailable: database not configured (set PREVIEW_LOGIN_ALLOW=1 to enable preview login)",
+        });
+    }
+    const uEnv = String(process.env.PREVIEW_LOGIN_USER || "preview").trim();
+    const pEnv = String(process.env.PREVIEW_LOGIN_PASS || "preview").trim();
+    if (username !== uEnv || password !== pEnv) {
+      return res.status(401).json({ error: "Invalid credentials" });
+    }
+    const token = jwt.sign(
+      {
+        userId: 0,
+        username: uEnv,
+        role: "HEAD",
+        assignedClassId: undefined,
+        assignedClassName: undefined,
+        assignedSubjectId: undefined,
+        assignedSubjectName: undefined,
+      },
+      JWT_SECRET,
+      { expiresIn: "8h" }
+    );
+    return res.json({
+      token,
+      user: {
+        id: 0,
+        username: uEnv,
+        fullName: "Preview User",
+        role: "HEAD",
+        assignedClassId: undefined,
+        assignedClassName: undefined,
+        assignedSubjectId: undefined,
+        assignedSubjectName: undefined,
+      },
+    });
   }
 
   let client;
