@@ -37,6 +37,8 @@ export const pool = new Pool({
   max: 20, // Connection pool limit
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 5000,
 });
 
 // Test connection

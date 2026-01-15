@@ -727,15 +727,15 @@ export default function App() {
     () => new Set((students || []).map((s) => s.id)),
     [students]
   );
-  const filteredStudents = useMemo(
-    () =>
-      (students || []).filter(
-        (s) =>
-          s.class === selectedClass &&
-          (s.status === "Active" || s.status === "Inactive")
-      ),
-    [students, selectedClass]
-  );
+  const filteredStudents = useMemo(() => {
+    const level = (selectedClass || "").split("(")[0].trim();
+    return (students || []).filter((s) => {
+      const sLevel = (s.class || "").split("(")[0].trim();
+      const classMatch = s.class === selectedClass || sLevel === level;
+      const statusOk = s.status === "Active" || s.status === "Inactive";
+      return classMatch && statusOk;
+    });
+  }, [students, selectedClass]);
 
   const [marks, setMarks] = useState<Marks>({});
 
@@ -1291,6 +1291,28 @@ export default function App() {
         try {
           const fresh = await apiClient.getStudents();
           setStudents(fresh);
+          const currentLevel = (selectedClass || "").split("(")[0].trim();
+          const hasCurrent =
+            fresh.filter((s) => {
+              const sLevel = (s.class || "").split("(")[0].trim();
+              return s.class === selectedClass || sLevel === currentLevel;
+            }).length > 0;
+          if (!hasCurrent && fresh.length > 0) {
+            const counts: Record<string, number> = {};
+            fresh.forEach((s) => {
+              const lvl = (s.class || "").split("(")[0].trim();
+              counts[lvl] = (counts[lvl] || 0) + 1;
+            });
+            const bestLevel = Object.entries(counts).sort(
+              (a, b) => b[1] - a[1]
+            )[0]?.[0];
+            if (bestLevel) {
+              const pick =
+                AVAILABLE_CLASSES.find((c) => c.startsWith(bestLevel)) ||
+                selectedClass;
+              setSelectedClass(pick);
+            }
+          }
         } catch {
           // ignore
         }
@@ -1319,6 +1341,28 @@ export default function App() {
           try {
             const fresh = await apiClient.getStudents();
             setStudents(fresh);
+            const currentLevel = (selectedClass || "").split("(")[0].trim();
+            const hasCurrent =
+              fresh.filter((s) => {
+                const sLevel = (s.class || "").split("(")[0].trim();
+                return s.class === selectedClass || sLevel === currentLevel;
+              }).length > 0;
+            if (!hasCurrent && fresh.length > 0) {
+              const counts: Record<string, number> = {};
+              fresh.forEach((s) => {
+                const lvl = (s.class || "").split("(")[0].trim();
+                counts[lvl] = (counts[lvl] || 0) + 1;
+              });
+              const bestLevel = Object.entries(counts).sort(
+                (a, b) => b[1] - a[1]
+              )[0]?.[0];
+              if (bestLevel) {
+                const pick =
+                  AVAILABLE_CLASSES.find((c) => c.startsWith(bestLevel)) ||
+                  selectedClass;
+                setSelectedClass(pick);
+              }
+            }
           } catch {
             // ignore
           }
@@ -4297,7 +4341,7 @@ export default function App() {
         </div>
       )}
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-slate-200">
-        {students.length === 0 && (
+        {filteredStudents.length === 0 && (
           <div className="p-6 text-center text-slate-600">
             <div className="text-lg font-semibold text-slate-800 mb-2">
               No student records

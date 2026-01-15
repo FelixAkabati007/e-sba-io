@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import fs from "fs";
 import type { PoolClient } from "pg";
 
 export type Row = {
@@ -24,7 +24,11 @@ const clamp = (f: string, n: number) => {
 export async function parseAssessmentSheet(
   filePath: string
 ): Promise<{ rows: Row[]; errors: string[] }> {
-  const wb = XLSX.readFile(filePath);
+  const mod = await import("xlsx");
+  const XLSX =
+    (mod as unknown as { default?: typeof import("xlsx") }).default || mod;
+  const buf = fs.readFileSync(filePath);
+  const wb = (XLSX as typeof import("xlsx")).read(buf, { type: "buffer" });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const json = XLSX.utils.sheet_to_json(ws) as Record<string, unknown>[];
   const errors: string[] = [];

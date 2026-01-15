@@ -167,6 +167,11 @@ router.post(
   authenticateToken,
   requireRole(["HEAD"]),
   async (req, res) => {
+    const start = Date.now();
+    let fileSize = 0;
+    let parseMs = 0;
+    let transformMs = 0;
+    let dbMs = 0;
     try {
       const { uploadId, fileName } = req.body;
       if (!uploadId) return res.status(400).json({ error: "Missing uploadId" });
@@ -201,16 +206,27 @@ router.post(
         writeStream.on("error", (err) => reject(err));
       });
 
-      fs.rmdirSync(dir); // Remove temp dir
+      fs.rmdirSync(dir);
 
-      // Parse and Process
-      const XLSX = await import("xlsx");
-      const workbook = XLSX.readFile(finalPath);
+      const stat = fs.statSync(finalPath);
+      fileSize = stat.size;
+
+      const mod = await import("xlsx");
+      const XLSX = (mod as unknown as { default?: unknown }).default || mod;
+      const parseStart = Date.now();
+      const fileBuffer = fs.readFileSync(finalPath);
+      const workbook = (XLSX as typeof import("xlsx")).read(fileBuffer, {
+        type: "buffer",
+      });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+      const jsonData = (XLSX as typeof import("xlsx")).utils.sheet_to_json(
+        worksheet,
+        { defval: "" }
+      );
+      parseMs = Date.now() - parseStart;
 
-      // Transform keys to match upsertStudent expectations
+      const transformStart = Date.now();
       const processed: Student[] = [];
       for (const row of jsonData as Array<Record<string, unknown>>) {
         const map: Record<string, unknown> = {};
@@ -244,20 +260,34 @@ router.post(
         };
         processed.push(student);
       }
+      transformMs = Date.now() - transformStart;
 
-      // Batch Insert
-      // Optimization: Parallelize upserts or use a bulk insert service method
-      // For now, reuse existing loop but maybe in parallel batches
+      const dbStart = Date.now();
       const BATCH_SIZE = 50;
       for (let i = 0; i < processed.length; i += BATCH_SIZE) {
         const batch = processed.slice(i, i + BATCH_SIZE);
-        await Promise.all(batch.map((s) => upsertStudent(s)));
+        for (const s of batch) {
+          await upsertStudent(s);
+        }
       }
+      dbMs = Date.now() - dbStart;
 
-      // Cleanup final file
       fs.unlinkSync(finalPath);
 
-      res.json({ ok: true, count: processed.length });
+      const totalMs = Date.now() - start;
+      const payload = {
+        ok: true,
+        count: processed.length,
+        metrics: {
+          fileSize,
+          parseMs,
+          transformMs,
+          dbMs,
+          totalMs,
+        },
+      };
+      console.log("students_upload_complete", payload);
+      res.json(payload);
     } catch (e) {
       console.error("Upload complete error:", e);
       res.status(500).json({ error: (e as Error).message });
