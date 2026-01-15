@@ -6,6 +6,17 @@ import { AuthRequest, authenticateToken } from "../middleware/auth";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
+type DBUserRow = {
+  user_id: number;
+  username: string;
+  password_hash: string;
+  role: string;
+  full_name: string;
+  assigned_class_id: number | null;
+  assigned_subject_id: number | null;
+  class_name: string | null;
+  subject_name: string | null;
+};
 const HAS_DB =
   !!process.env.DATABASE_URL ||
   !!process.env.POSTGRES_URL ||
@@ -26,12 +37,10 @@ router.post("/login", async (req, res) => {
   if (!HAS_DB) {
     const allow = String(process.env.PREVIEW_LOGIN_ALLOW || "0") === "1";
     if (!allow) {
-      return res
-        .status(503)
-        .json({
-          error:
-            "Service unavailable: database not configured (set PREVIEW_LOGIN_ALLOW=1 to enable preview login)",
-        });
+      return res.status(503).json({
+        error:
+          "Service unavailable: database not configured (set PREVIEW_LOGIN_ALLOW=1 to enable preview login)",
+      });
     }
     const uEnv = String(process.env.PREVIEW_LOGIN_USER || "preview").trim();
     const pEnv = String(process.env.PREVIEW_LOGIN_PASS || "preview").trim();
@@ -68,7 +77,17 @@ router.post("/login", async (req, res) => {
 
   let client;
   try {
-    client = await pool.connect();
+    const conn = pool.connect();
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("DB connection timeout")), 5000)
+    );
+    client = (await Promise.race([conn, timeout])) as unknown as {
+      query: (
+        text: string,
+        params?: unknown[]
+      ) => Promise<{ rows: Record<string, unknown>[] }>;
+      release: () => void;
+    };
     const { rows } = await client.query(
       `SELECT u.*, c.class_name, s.subject_name 
        FROM users u
@@ -78,7 +97,7 @@ router.post("/login", async (req, res) => {
       [username]
     );
 
-    const user = rows[0];
+    const user = rows[0] as unknown as DBUserRow;
     if (!user) {
       return res.status(401).json({ error: "Invalid credentials" });
     }
@@ -118,6 +137,20 @@ router.post("/login", async (req, res) => {
   } catch (error) {
     console.error("Login error:", error);
     const msg = error instanceof Error ? error.message : String(error);
+    const lower = msg.toLowerCase();
+    if (
+      lower.includes("db connection timeout") ||
+      lower.includes("timeout") ||
+      lower.includes("getaddrinfo") ||
+      lower.includes("ecconnrefused") ||
+      lower.includes("refused") ||
+      lower.includes("certificate") ||
+      lower.includes("tls")
+    ) {
+      return res
+        .status(503)
+        .json({ error: "Database connection failed", details: msg });
+    }
     res.status(500).json({ error: "Internal server error", details: msg });
   } finally {
     if (client) client.release();
