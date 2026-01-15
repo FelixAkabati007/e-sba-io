@@ -15,6 +15,11 @@
 /* Isolate assessment container for better paint/layout performance */
 .assessment-container {
   contain: content;
+  margin-top: 20px;
+  width: 100%;
+  padding: 15px 20px;
+  border-radius: 0.75rem; /* matches Tailwind rounded-lg */
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-md, consistent with Navbar style */
 }
 
 @media (prefers-reduced-motion: reduce) {

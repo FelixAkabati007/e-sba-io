@@ -2068,8 +2068,8 @@ export default function App() {
 
   const renderSubjectSheet = () => {
     return (
-      <div className="bg-white rounded-lg shadow-lg border border-slate-200 overflow-hidden flex flex-col assessment-container">
-        <div className="px-4 py-3 sm:px-6 sm:py-4 bg-blue-50 border-b border-blue-100 flex justify-between items-center">
+      <div className="bg-white border border-slate-200 overflow-hidden flex flex-col assessment-container">
+        <div className="bg-blue-50 border-b border-blue-100 flex justify-between items-center">
           <div>
             <h2 className="text-xl font-bold text-blue-900">
               {activeSubject} Assessment Sheet
