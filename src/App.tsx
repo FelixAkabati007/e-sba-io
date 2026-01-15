@@ -738,6 +738,7 @@ export default function App() {
   }, [students, selectedClass]);
 
   const [marks, setMarks] = useState<Marks>({});
+  const [subjectRevealStep, setSubjectRevealStep] = useState(0);
 
   const classStats = useMemo(() => {
     if (!activeSubject) return null;
@@ -2080,6 +2081,34 @@ export default function App() {
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <button
+              onClick={() =>
+                setSubjectRevealStep((prev) => (prev >= 2 ? 0 : prev + 1))
+              }
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 text-blue-700 hover:bg-blue-50 rounded-lg text-sm font-medium transition-colors"
+              aria-label={
+                subjectRevealStep === 0
+                  ? "Reveal progress section"
+                  : subjectRevealStep === 1
+                  ? "Reveal summary section"
+                  : "Hide progress and summary sections"
+              }
+              title="Reveal sections"
+            >
+              <ArrowLeft
+                size={16}
+                className={`transform transition-transform ${
+                  subjectRevealStep > 0 ? "rotate-180" : "rotate-0"
+                }`}
+              />
+              <span>
+                {subjectRevealStep === 0
+                  ? "Show Progress"
+                  : subjectRevealStep === 1
+                  ? "Show Summary"
+                  : "Hide Sections"}
+              </span>
+            </button>
+            <button
               onClick={() => {
                 if (user?.role === "CLASS") {
                   alert("Access Denied: Uploading assessments is restricted.");
@@ -2131,13 +2160,22 @@ export default function App() {
         </div>
         {/* Subject Progress Bar */}
         <div className="px-4 pt-4 space-y-4">
-          <ProgressBar
-            scope="subject"
-            className={selectedClass}
-            subjectName={activeSubject}
-            academicYear={academicYear}
-            term={term}
-          />
+          <div
+            className={`transition-all duration-500 ${
+              subjectRevealStep >= 1
+                ? "opacity-100 translate-y-0 block"
+                : "opacity-0 -translate-y-2 hidden"
+            }`}
+            aria-hidden={subjectRevealStep < 1 ? "true" : "false"}
+          >
+            <ProgressBar
+              scope="subject"
+              className={selectedClass}
+              subjectName={activeSubject}
+              academicYear={academicYear}
+              term={term}
+            />
+          </div>
           {/* Aggregate Summary Cards */}
           {(() => {
             let totalFinal = 0;
@@ -2188,7 +2226,14 @@ export default function App() {
                 : "-";
 
             return (
-              <div className="space-y-6">
+              <div
+                className={`space-y-6 transition-all duration-500 ${
+                  subjectRevealStep >= 2
+                    ? "opacity-100 translate-y-0 block"
+                    : "opacity-0 -translate-y-2 hidden"
+                }`}
+                aria-hidden={subjectRevealStep < 2 ? "true" : "false"}
+              >
                 <section
                   className="grid grid-cols-2 md:grid-cols-5 gap-4"
                   aria-label="Class Performance Summary"
@@ -4433,8 +4478,8 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans">
-      <div className="bg-slate-900 text-white p-4 shadow-md flex items-center justify-between">
+    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans pt-16">
+      <div className="fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 shadow-md flex items-center justify-between z-50">
         <div className="flex items-center space-x-3">
           {currentView !== "home" && (
             <button
@@ -4488,7 +4533,7 @@ export default function App() {
           <SignOutButton onLogout={logout} />
         </div>
       </div>
-      <main className="p-4 pb-16">
+      <main className="p-4 pb-20 overflow-y-auto">
         {currentView === "home" && renderHome()}
         {currentView === "register" && (
           <div className="space-y-6 animate-in fade-in duration-500">
