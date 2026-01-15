@@ -4496,7 +4496,7 @@ export default function App() {
             <img
               src="/logo.png"
               alt="E-SBA"
-              className="w-8 h-8 object-contain"
+              className="object-contain w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 lg:w-16 lg:h-16 xl:w-20 xl:h-20"
             />
             <h1 className="text-xl font-bold tracking-wide">E-SBA [JHS]</h1>
           </div>
@@ -4533,7 +4533,10 @@ export default function App() {
           <SignOutButton onLogout={logout} />
         </div>
       </div>
-      <main className="p-4 pb-20 overflow-y-auto">
+      <main
+        className="p-4 pb-20 overflow-y-auto overscroll-y-contain scroll-smooth"
+        style={{ WebkitOverflowScrolling: "touch", scrollPaddingTop: "64px" }}
+      >
         {currentView === "home" && renderHome()}
         {currentView === "register" && (
           <div className="space-y-6 animate-in fade-in duration-500">
