@@ -44,15 +44,20 @@ function parseCookies(
 }
 
 router.get("/csrf", (_req, res) => {
-  const token = crypto.randomBytes(32).toString("hex");
-  res.cookie("csrf-token", token, {
-    httpOnly: false,
-    secure: !!process.env.VERCEL,
-    sameSite: "strict",
-    path: "/",
-    maxAge: 30 * 60 * 1000,
-  });
-  res.json({ token });
+  try {
+    const token = crypto.randomBytes(32).toString("hex");
+    res.cookie("csrf-token", token, {
+      httpOnly: false,
+      secure: false, // Force false for local dev to avoid HTTPS requirement issues
+      sameSite: "lax", // 'lax' is better for local dev than 'strict'
+      path: "/",
+      maxAge: 30 * 60 * 1000,
+    });
+    res.json({ token });
+  } catch (err) {
+    console.error("CSRF Error:", err);
+    res.status(500).json({ error: "Failed to generate CSRF token" });
+  }
 });
 
 // Login
