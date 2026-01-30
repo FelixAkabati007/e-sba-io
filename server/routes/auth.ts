@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { pool } from "../lib/db";
 import { AuthRequest, authenticateToken } from "../middleware/auth";
+import { PoolClient } from "pg";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
@@ -27,7 +28,7 @@ const HAS_DB =
   !!process.env.NEON_DATABASE_URL;
 
 function parseCookies(
-  cookieHeader: string | undefined
+  cookieHeader: string | undefined,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   if (!cookieHeader) return out;
@@ -37,7 +38,11 @@ function parseCookies(
     if (idx > 0) {
       const k = p.slice(0, idx);
       const v = p.slice(idx + 1);
-      out[k] = decodeURIComponent(v);
+      try {
+        out[k] = decodeURIComponent(v);
+      } catch {
+        out[k] = v;
+      }
     }
   }
   return out;
@@ -46,10 +51,11 @@ function parseCookies(
 router.get("/csrf", (_req, res) => {
   try {
     const token = crypto.randomBytes(32).toString("hex");
+    const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
     res.cookie("csrf-token", token, {
       httpOnly: false,
-      secure: false, // Force false for local dev to avoid HTTPS requirement issues
-      sameSite: "lax", // 'lax' is better for local dev than 'strict'
+      secure: isProd,
+      sameSite: isProd ? "strict" : "lax",
       path: "/",
       maxAge: 30 * 60 * 1000,
     });
@@ -65,7 +71,13 @@ router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   console.log(`[Auth] Login attempt for user: ${username}`);
 
-  const cookies = parseCookies(req.headers.cookie);
+  let cookies: Record<string, string> = {};
+  try {
+    cookies = parseCookies(req.headers.cookie);
+  } catch (err) {
+    console.warn("[Auth] Cookie parsing failed:", err);
+    cookies = {};
+  }
   const csrfHeader = String(req.headers["x-csrf-token"] || "");
   const csrfCookie = String(cookies["csrf-token"] || "");
   if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
@@ -110,7 +122,7 @@ router.post("/login", async (req, res) => {
         assignedSubjectName: undefined,
       },
       JWT_SECRET,
-      { expiresIn: "8h" }
+      { expiresIn: "8h" },
     );
     return res.json({
       token,
@@ -127,26 +139,27 @@ router.post("/login", async (req, res) => {
     });
   }
 
-  let client;
+  let client: PoolClient | undefined;
   try {
     const conn = pool.connect();
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("DB connection timeout")), 5000)
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("DB connection timeout")), 5000),
     );
-    client = (await Promise.race([conn, timeout])) as unknown as {
-      query: (
-        text: string,
-        params?: unknown[]
-      ) => Promise<{ rows: Record<string, unknown>[] }>;
-      release: () => void;
-    };
-    const { rows } = await client.query(
+    try {
+      client = await Promise.race([conn, timeout]);
+    } catch (raceError) {
+      // If timeout wins, ensure the connection is released if it eventually completes
+      conn.then((c) => c.release()).catch(() => {});
+      throw raceError;
+    }
+
+    const { rows } = await client!.query(
       `SELECT u.*, c.class_name, s.subject_name 
        FROM users u
        LEFT JOIN classes c ON u.assigned_class_id = c.class_id
        LEFT JOIN subjects s ON u.assigned_subject_id = s.subject_id
        WHERE u.username = $1`,
-      [username]
+      [username],
     );
 
     const user = rows[0] as unknown as DBUserRow;
@@ -173,7 +186,7 @@ router.post("/login", async (req, res) => {
         iss: JWT_ISSUER,
       },
       JWT_SECRET,
-      { expiresIn: `${SESSION_TTL_MIN}m` }
+      { expiresIn: `${SESSION_TTL_MIN}m` },
     );
 
     res.json({
@@ -217,7 +230,7 @@ router.get("/me", authenticateToken, async (req: AuthRequest, res) => {
   const userId = req.user?.userId;
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-  let client;
+  let client: PoolClient | undefined;
   try {
     client = await pool.connect();
     const { rows } = await client.query(
@@ -228,7 +241,7 @@ router.get("/me", authenticateToken, async (req: AuthRequest, res) => {
        LEFT JOIN classes c ON u.assigned_class_id = c.class_id
        LEFT JOIN subjects s ON u.assigned_subject_id = s.subject_id
        WHERE u.user_id = $1`,
-      [userId]
+      [userId],
     );
 
     if (rows.length === 0) {

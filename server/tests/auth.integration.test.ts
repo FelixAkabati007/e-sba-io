@@ -19,6 +19,17 @@ describe("Auth Integration Tests", () => {
     expect(res.header["set-cookie"]).toBeDefined();
   });
 
+  it("GET /api/auth/csrf should set Secure cookie in production", async () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = "production";
+    const res = await request(app).get("/api/auth/csrf");
+    process.env.NODE_ENV = prev;
+    expect(res.status).toBe(200);
+    const setCookie = String(res.header["set-cookie"] || "");
+    expect(setCookie.toLowerCase()).toContain("secure");
+    expect(setCookie.toLowerCase()).toContain("samesite=strict");
+  });
+
   it("GET /api/auth/me without token should return 401", async () => {
     const res = await request(app).get("/api/auth/me");
     expect(res.status).toBe(401); // Unauthorized
@@ -28,4 +39,25 @@ describe("Auth Integration Tests", () => {
   // but we can verify /me if we had a token.
   // Since we don't want to rely on seeding or known users that might change,
   // we'll stick to verifying the public endpoints and failure modes.
+
+  it("POST /api/auth/login with mismatched CSRF should return 403", async () => {
+    const csrfRes = await request(app).get("/api/auth/csrf");
+    const cookies = csrfRes.header["set-cookie"];
+    const mismatchedToken = "not-the-token";
+    const res = await request(app)
+      .post("/api/auth/login")
+      .set("Cookie", cookies)
+      .set("x-csrf-token", mismatchedToken)
+      .send({ username: "any", password: "any-password" });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /api/auth/login with malformed cookie header should not crash", async () => {
+    const res = await request(app)
+      .post("/api/auth/login")
+      .set("Cookie", "csrf-token=%E0%A4%A") // bad percent-encoding
+      .set("x-csrf-token", "token")
+      .send({ username: "u", password: "p" });
+    expect([400, 403]).toContain(res.status); // should be a handled error, not 500
+  });
 });
