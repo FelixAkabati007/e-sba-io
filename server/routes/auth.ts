@@ -29,10 +29,20 @@ const HAS_DB =
 
 router.get("/csrf", (_req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
+  const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
+  const sameSiteEnv = String(process.env.CSRF_SAMESITE || "").toLowerCase();
+  const sameSite =
+    sameSiteEnv === "lax" || sameSiteEnv === "none" || sameSiteEnv === "strict"
+      ? (sameSiteEnv as "lax" | "none" | "strict")
+      : isProd
+        ? "strict"
+        : "lax";
+  const secureEnv = String(process.env.CSRF_SECURE || "").toLowerCase();
+  const secure = secureEnv === "1" || secureEnv === "true" || isProd;
   res.cookie("csrf-token", token, {
     httpOnly: false,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
+    secure,
+    sameSite,
     path: "/",
     maxAge: 30 * 60 * 1000,
   });
@@ -57,6 +67,15 @@ router.post("/login", async (req, res) => {
   const csrfCookie = String(cookies["csrf-token"] || "");
   if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
     return res.status(403).json({ error: "Forbidden: CSRF validation failed" });
+  }
+
+  const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
+  const misconfiguredSecret =
+    isProd && JWT_SECRET === "super-secret-key-change-this";
+  if (misconfiguredSecret && HAS_DB) {
+    return res
+      .status(503)
+      .json({ error: "Service misconfigured: JWT_SECRET not set" });
   }
 
   if (!username || !password) {
