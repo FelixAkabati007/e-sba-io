@@ -9,7 +9,7 @@ const { Pool } = pg;
 (() => {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const roots = [process.cwd(), path.resolve(here, "..", "..")];
-  const files = [".env", ".env.development", ".env.local"];
+  const files = [".env", ".env.development", ".env.local", ".env.production"];
   for (const r of roots) {
     for (const f of files) {
       const p = path.join(r, f);

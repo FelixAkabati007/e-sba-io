@@ -44,7 +44,7 @@ router.post("/login", async (req, res) => {
   const { username, password } = req.body;
   console.log(`[Auth] Login attempt for user: ${username}`);
 
-  let cookies: Record<string, string> = {};
+  const cookies: Record<string, string> = {};
   if (req.headers.cookie) {
     req.headers.cookie.split(";").forEach((cookie) => {
       const [key, value] = cookie.trim().split("=");
