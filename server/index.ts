@@ -49,6 +49,13 @@ async function ensureInitialized(): Promise<void> {
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
+
+// Version Header Middleware for Client-Server Skew Detection
+app.use((_req, res, next) => {
+  res.setHeader("X-App-Version", process.env.npm_package_version || "1.0.0");
+  next();
+});
+
 app.use(express.json({ limit: "5mb" }));
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 
