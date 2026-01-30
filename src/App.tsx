@@ -4614,7 +4614,7 @@ export default function App() {
       </main>
       <footer
         role="contentinfo"
-        className="fixed bottom-0 left-0 right-0 bg-slate-900 text-slate-300 border-t border-slate-800"
+        className="w-full shrink-0 bg-slate-900 text-slate-300 border-t border-slate-800"
       >
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex flex-col sm:flex-row items-center justify-center h-12 text-xs tracking-wide">
