@@ -33,7 +33,7 @@ import { RankingReport } from "./components/RankingReport";
 const SystemSetup = React.lazy(() =>
   import("./components/SystemSetup").then((module) => ({
     default: module.SystemSetup,
-  }))
+  })),
 );
 const ReportCards = React.lazy(() => import("./components/ReportCards"));
 
@@ -66,7 +66,7 @@ const MasterDBSyncControls: React.FC = () => null;
 // --- Chunked Upload Helper ---
 async function uploadFileChunked(
   file: File,
-  onProgress: (pct: number) => void
+  onProgress: (pct: number) => void,
 ): Promise<number> {
   const token =
     localStorage.getItem("token") || localStorage.getItem("API_AUTH_TOKEN");
@@ -251,7 +251,7 @@ const lastProcessedKey = (
   cls: string,
   subj: string,
   ay: string,
-  tm: string
+  tm: string,
 ): string => `ASSESSREPO::LAST_PROCESSED:${cls}:${subj}:${ay}:${tm}`;
 
 // Removed unused LS keys and helper functions
@@ -293,7 +293,7 @@ const DashboardTile = React.memo(
         {title}
       </span>
     </div>
-  )
+  ),
 );
 
 export default function App() {
@@ -362,7 +362,7 @@ export default function App() {
         academicYear,
         term,
         rankingPage,
-        50
+        50,
       );
       setRankingData(res);
     } catch (e) {
@@ -380,7 +380,7 @@ export default function App() {
         academicYear,
         term,
         1,
-        1000 // Fetch all for report
+        1000, // Fetch all for report
       );
 
       const { jsPDF } = await import("jspdf");
@@ -398,7 +398,7 @@ export default function App() {
       doc.text(
         `Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
         14,
-        42
+        42,
       );
 
       // Table
@@ -422,7 +422,7 @@ export default function App() {
       alert(
         msg.includes("Access denied")
           ? "Access denied. Please sign in as Head Teacher."
-          : "Failed to generate PDF report."
+          : "Failed to generate PDF report.",
       );
     }
   };
@@ -692,7 +692,7 @@ export default function App() {
   type ImportedRow = Record<string, unknown>;
   const [importedPreview, setImportedPreview] = useState<ImportedRow[]>([]);
   const [selectedImportFile, setSelectedImportFile] = useState<File | null>(
-    null
+    null,
   );
   const [importProgress, setImportProgress] = useState(0);
 
@@ -725,7 +725,7 @@ export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const existingStudentIds = useMemo(
     () => new Set((students || []).map((s) => s.id)),
-    [students]
+    [students],
   );
   const filteredStudents = useMemo(() => {
     const level = (selectedClass || "").split("(")[0].trim();
@@ -863,7 +863,7 @@ export default function App() {
 
     const timer = setTimeout(() => {
       const classStudents = students.filter(
-        (s) => s.class === selectedClass && s.status === "Active"
+        (s) => s.class === selectedClass && s.status === "Active",
       );
       const rows: SaveMarksRow[] = [];
       for (const s of classStudents) {
@@ -987,7 +987,7 @@ export default function App() {
     const validExtensions = [".xlsx", ".xls"];
     const fileName = file.name.toLowerCase();
     const isValidExtension = validExtensions.some((ext) =>
-      fileName.endsWith(ext)
+      fileName.endsWith(ext),
     );
     if (!isValidExtension) {
       setImportLogs((prev) => [
@@ -1012,7 +1012,7 @@ export default function App() {
           undefined,
           file,
           ["excel-import", selectedClass || ""],
-          undefined
+          undefined,
         );
       } catch {
         void 0;
@@ -1107,7 +1107,7 @@ export default function App() {
             ["excel-import-json", selectedClass || ""],
             undefined,
             true,
-            file.name
+            file.name,
           );
         } catch {
           void 0;
@@ -1141,7 +1141,7 @@ export default function App() {
       const items = await list({ tag: "excel-import" });
       const jsonItems = await list({ tag: "excel-import-json" });
       const merged = [...items, ...jsonItems].sort(
-        (a, b) => b.timestamp - a.timestamp
+        (a, b) => b.timestamp - a.timestamp,
       );
       setStorageItems(merged);
       const usage = await getUsage();
@@ -1223,7 +1223,7 @@ export default function App() {
         bookProps: true,
       });
       const hasVBA = Boolean(
-        (wb as unknown as Record<string, unknown>)["vbaraw"]
+        (wb as unknown as Record<string, unknown>)["vbaraw"],
       );
       const sheets: Array<{
         name: string;
@@ -1277,7 +1277,7 @@ export default function App() {
         if (selectedImportFile.size === 0) throw new Error("File is empty");
 
         const count = await uploadFileChunked(selectedImportFile, (pct) =>
-          setImportProgress(pct)
+          setImportProgress(pct),
         );
 
         setImportLogs((prev) => [
@@ -1305,7 +1305,7 @@ export default function App() {
               counts[lvl] = (counts[lvl] || 0) + 1;
             });
             const bestLevel = Object.entries(counts).sort(
-              (a, b) => b[1] - a[1]
+              (a, b) => b[1] - a[1],
             )[0]?.[0];
             if (bestLevel) {
               const pick =
@@ -1323,7 +1323,7 @@ export default function App() {
           importedPreview,
           existingStudentIds,
           selectedClass,
-          academicYear
+          academicYear,
         );
         if (newStudents.length > 0) {
           const CHUNK_SIZE = 50;
@@ -1355,7 +1355,7 @@ export default function App() {
                 counts[lvl] = (counts[lvl] || 0) + 1;
               });
               const bestLevel = Object.entries(counts).sort(
-                (a, b) => b[1] - a[1]
+                (a, b) => b[1] - a[1],
               )[0]?.[0];
               if (bestLevel) {
                 const pick =
@@ -1429,7 +1429,7 @@ export default function App() {
             Status: s.status,
             DOB: s.dob,
             Contact: s.guardianContact,
-          }))
+          })),
         );
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "MasterDB");
@@ -1450,7 +1450,7 @@ export default function App() {
           wb,
           `MasterDB_${selectedClass}_${
             new Date().toISOString().split("T")[0]
-          }.xlsx`
+          }.xlsx`,
         );
         setDocStatus("Download Started");
       } catch (e) {
@@ -1495,7 +1495,7 @@ export default function App() {
           (
             autoTable as unknown as (
               doc: InstanceType<typeof jsPDF>,
-              opts: unknown
+              opts: unknown,
             ) => void
           )(doc, {
             head: [tableColumn],
@@ -1521,7 +1521,7 @@ export default function App() {
   }, [schoolConfig.headSignatureUrl]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -1597,7 +1597,7 @@ export default function App() {
       // Update local state
       if (editingStudent) {
         setStudents((prev) =>
-          prev.map((s) => (s.id === editingStudent.id ? studentData : s))
+          prev.map((s) => (s.id === editingStudent.id ? studentData : s)),
         );
       } else {
         setStudents((prev) => [...prev, studentData]);
@@ -1650,7 +1650,7 @@ export default function App() {
     // Second thought confirmation
     if (
       !window.confirm(
-        "CRITICAL WARNING: You are about to wipe the entire Neon Database.\n\nThis action cannot be undone. All students, assessments, and records will be permanently deleted.\n\nAre you absolutely sure you want to proceed?"
+        "CRITICAL WARNING: You are about to wipe the entire Neon Database.\n\nThis action cannot be undone. All students, assessments, and records will be permanently deleted.\n\nAre you absolutely sure you want to proceed?",
       )
     ) {
       return;
@@ -1736,7 +1736,7 @@ export default function App() {
 
     const calculateSubjectProgress = (subj: string, cls: string) => {
       const studentsInClass = (students || []).filter(
-        (s) => s.class === cls && s.status === "Active"
+        (s) => s.class === cls && s.status === "Active",
       );
       if (studentsInClass.length === 0) return 0;
 
@@ -1817,8 +1817,8 @@ export default function App() {
               {user?.role === "HEAD"
                 ? "Head Teacher (Administrator)"
                 : user?.role === "CLASS"
-                ? `Class Teacher - ${user.assignedClassName}`
-                : `Subject Teacher - ${user?.assignedSubjectName || ""}`}
+                  ? `Class Teacher - ${user.assignedClassName}`
+                  : `Subject Teacher - ${user?.assignedSubjectName || ""}`}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -1938,7 +1938,7 @@ export default function App() {
                 .filter(
                   (subj) =>
                     !user?.assignedSubjectName ||
-                    subj === user.assignedSubjectName
+                    subj === user.assignedSubjectName,
                 )
                 .map((subj) => (
                   <DashboardTile
@@ -1954,19 +1954,19 @@ export default function App() {
                       user?.role === "CLASS"
                         ? undefined
                         : subj === "Mathematics"
-                        ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBNVtepKT2YtCg7GODExQYE-kE7UBGS-1lA&s"
-                        : subj === "English Language"
-                        ? "https://edusoftlearning.com/wp-content/uploads/2018/10/Edusoft-the-English-Language-Learning-Experts-1080x540.jpg"
-                        : subj === "Integrated Science"
-                        ? "https://www.nesdis.noaa.gov/s3/2025-09/science.png"
-                        : subj === "Social Studies"
-                        ? "https://www.championtutor.com/blog/wp-content/uploads/2023/04/Picture31.jpg"
-                        : undefined
+                          ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTtBNVtepKT2YtCg7GODExQYE-kE7UBGS-1lA&s"
+                          : subj === "English Language"
+                            ? "https://edusoftlearning.com/wp-content/uploads/2018/10/Edusoft-the-English-Language-Learning-Experts-1080x540.jpg"
+                            : subj === "Integrated Science"
+                              ? "https://www.nesdis.noaa.gov/s3/2025-09/science.png"
+                              : subj === "Social Studies"
+                                ? "https://www.championtutor.com/blog/wp-content/uploads/2023/04/Picture31.jpg"
+                                : undefined
                     }
                     onClick={() => {
                       if (user?.role === "CLASS") {
                         alert(
-                          "Access Denied: Subject modules are restricted for Class Teachers."
+                          "Access Denied: Subject modules are restricted for Class Teachers.",
                         );
                         return;
                       }
@@ -1986,7 +1986,7 @@ export default function App() {
                 .filter(
                   (subj) =>
                     !user?.assignedSubjectName ||
-                    subj === user.assignedSubjectName
+                    subj === user.assignedSubjectName,
                 )
                 .map((subj) => (
                   <DashboardTile
@@ -2002,23 +2002,23 @@ export default function App() {
                       user?.role === "CLASS"
                         ? undefined
                         : subj === "Computing"
-                        ? "https://findvectorlogo.com/wp-content/uploads/2019/11/computing-vector-logo.png"
-                        : subj === "Career Technology"
-                        ? "https://media.licdn.com/dms/image/v2/D4E12AQE5tslHqALWLw/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1673452653564?e=2147483647&v=beta&t=Mv4FYS9k5cJIfRg1JyH1ZmnLkNhlbxAT7ca3j_HaUoM"
-                        : subj === "Creative Arts"
-                        ? "https://www.purpleoaksacademy.org/_site/data/files/images/auto_upload/page/90/D09D84D10AAC9F784E9BADB7AB3A1F93.jpeg"
-                        : subj === "French"
-                        ? "https://lilata.com/wp-content/uploads/francais-translation-french-french-language.jpg"
-                        : subj === "Ghanaian Language"
-                        ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYLygQ4IcqArqcZdObLbj1Zv0nukkTgEqaWw&s"
-                        : subj === "RME"
-                        ? "https://curriculumresources.edu.gh/wp-content/uploads/2024/11/RELIGIOUS-AND-MORAL-EDUCATION-Curriculum-pdf-1024x724.jpg"
-                        : undefined
+                          ? "https://findvectorlogo.com/wp-content/uploads/2019/11/computing-vector-logo.png"
+                          : subj === "Career Technology"
+                            ? "https://media.licdn.com/dms/image/v2/D4E12AQE5tslHqALWLw/article-cover_image-shrink_720_1280/article-cover_image-shrink_720_1280/0/1673452653564?e=2147483647&v=beta&t=Mv4FYS9k5cJIfRg1JyH1ZmnLkNhlbxAT7ca3j_HaUoM"
+                            : subj === "Creative Arts"
+                              ? "https://www.purpleoaksacademy.org/_site/data/files/images/auto_upload/page/90/D09D84D10AAC9F784E9BADB7AB3A1F93.jpeg"
+                              : subj === "French"
+                                ? "https://lilata.com/wp-content/uploads/francais-translation-french-french-language.jpg"
+                                : subj === "Ghanaian Language"
+                                  ? "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTYLygQ4IcqArqcZdObLbj1Zv0nukkTgEqaWw&s"
+                                  : subj === "RME"
+                                    ? "https://curriculumresources.edu.gh/wp-content/uploads/2024/11/RELIGIOUS-AND-MORAL-EDUCATION-Curriculum-pdf-1024x724.jpg"
+                                    : undefined
                     }
                     onClick={() => {
                       if (user?.role === "CLASS") {
                         alert(
-                          "Access Denied: Subject modules are restricted for Class Teachers."
+                          "Access Denied: Subject modules are restricted for Class Teachers.",
                         );
                         return;
                       }
@@ -2089,8 +2089,8 @@ export default function App() {
                 subjectRevealStep === 0
                   ? "Reveal progress section"
                   : subjectRevealStep === 1
-                  ? "Reveal summary section"
-                  : "Hide progress and summary sections"
+                    ? "Reveal summary section"
+                    : "Hide progress and summary sections"
               }
               title="Reveal sections"
             >
@@ -2104,8 +2104,8 @@ export default function App() {
                 {subjectRevealStep === 0
                   ? "Show Progress"
                   : subjectRevealStep === 1
-                  ? "Show Summary"
-                  : "Hide Sections"}
+                    ? "Show Summary"
+                    : "Hide Sections"}
               </span>
             </button>
             <button
@@ -2217,7 +2217,7 @@ export default function App() {
                     (attendanceValues.reduce(
                       (acc, curr) =>
                         acc + (curr.total > 0 ? curr.present / curr.total : 0),
-                      0
+                      0,
                     ) /
                       attendanceValues.length) *
                     100
@@ -2374,7 +2374,7 @@ export default function App() {
                             if (user?.role === "CLASS") {
                               e.preventDefault();
                               alert(
-                                "Access Denied: Subject Marks are managed by Subject Teachers."
+                                "Access Denied: Subject Marks are managed by Subject Teachers.",
                               );
                             }
                           }}
@@ -2401,7 +2401,7 @@ export default function App() {
                           if (user?.role === "CLASS") {
                             e.preventDefault();
                             alert(
-                              "Access Denied: Subject Marks are managed by Subject Teachers."
+                              "Access Denied: Subject Marks are managed by Subject Teachers.",
                             );
                           }
                         }}
@@ -2425,7 +2425,7 @@ export default function App() {
                           if (user?.role === "CLASS") {
                             e.preventDefault();
                             alert(
-                              "Access Denied: Subject Marks are managed by Subject Teachers."
+                              "Access Denied: Subject Marks are managed by Subject Teachers.",
                             );
                           }
                         }}
@@ -2455,7 +2455,7 @@ export default function App() {
                           if (user?.role === "CLASS") {
                             e.preventDefault();
                             alert(
-                              "Access Denied: Subject Marks are managed by Subject Teachers."
+                              "Access Denied: Subject Marks are managed by Subject Teachers.",
                             );
                           }
                         }}
@@ -2572,14 +2572,14 @@ export default function App() {
                         {row.type === "cnt"
                           ? classStats.attendance.cnt
                           : classStats.attendance[
-                              row.type as keyof typeof classStats.attendance
-                            ] === "-"
-                          ? "-"
-                          : `${
-                              classStats.attendance[
                                 row.type as keyof typeof classStats.attendance
-                              ]
-                            }%`}
+                              ] === "-"
+                            ? "-"
+                            : `${
+                                classStats.attendance[
+                                  row.type as keyof typeof classStats.attendance
+                                ]
+                              }%`}
                       </td>
                     </tr>
                   ))}
@@ -2646,7 +2646,7 @@ export default function App() {
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
       const safe = (v: string) => v.replace(/[^A-Za-z0-9_-]+/g, "_");
       const filename = `Assessment_Template_${safe(
-        activeSubject || "Subject"
+        activeSubject || "Subject",
       )}_${safe(selectedClass)}_${safe(academicYear)}_${safe(term)}.xlsx`;
       XLSX.writeFile(wb, filename);
       setTemplateStatus("Template downloaded");
@@ -2905,7 +2905,7 @@ export default function App() {
         wbx.Workbook.Views = [{ activeTab: 0 }];
         const safe = (v: string) => v.replace(/[^A-Za-z0-9_-]+/g, "_");
         const filename = `Assessment_${safe(activeSubject || "Subject")}_${safe(
-          selectedClass
+          selectedClass,
         )}_${safe(academicYear)}_${safe(term)}_${
           new Date().toISOString().split("T")[0]
         }.xlsx`;
@@ -2951,7 +2951,7 @@ export default function App() {
                     undefined,
                     f,
                     ["assessment", activeSubject || "", selectedClass || ""],
-                    undefined
+                    undefined,
                   );
                 } catch {
                   void 0;
@@ -3117,7 +3117,7 @@ export default function App() {
                               {String(
                                 (row as Record<string, string | number | null>)[
                                   k
-                                ] ?? ""
+                                ] ?? "",
                               )}
                             </td>
                           ))}
@@ -3137,7 +3137,7 @@ export default function App() {
               <div className="w-full bg-slate-100 rounded h-2">
                 <div
                   className={`bg-blue-600 h-2 rounded ${progressWidthClass(
-                    assessmentProgress
+                    assessmentProgress,
                   )}`}
                 />
                 <progress
@@ -3242,7 +3242,9 @@ export default function App() {
                       const lower: Record<string, unknown> = {};
                       Object.keys(r).forEach(
                         (k) =>
-                          (lower[mapKey(k)] = (r as Record<string, unknown>)[k])
+                          (lower[mapKey(k)] = (r as Record<string, unknown>)[
+                            k
+                          ]),
                       );
                       const sid = String(lower["student_id"] || "").trim();
                       if (!sid) continue;
@@ -3281,7 +3283,7 @@ export default function App() {
                     selectedClass,
                     activeSubject,
                     academicYear,
-                    term
+                    term,
                   );
                   const currentVer = kvGet<number>("local", vk) || 0;
                   const nextVer = currentVer + 1;
@@ -3290,7 +3292,9 @@ export default function App() {
                       const lower: Record<string, unknown> = {};
                       Object.keys(r).forEach(
                         (k) =>
-                          (lower[mapKey(k)] = (r as Record<string, unknown>)[k])
+                          (lower[mapKey(k)] = (r as Record<string, unknown>)[
+                            k
+                          ]),
                       );
                       const sid = String(lower["student_id"] || "").trim();
                       if (!sid) return null;
@@ -3343,8 +3347,8 @@ export default function App() {
                         .replace(/[^A-Za-z0-9_-]+/g, "_")
                         .slice(
                           0,
-                          40
-                        )}_${selectedClass}_${academicYear}_${term}_v${nextVer}.json`
+                          40,
+                        )}_${selectedClass}_${academicYear}_${term}_v${nextVer}.json`,
                     );
                     kvSet("local", vk, nextVer);
                     kvSet(
@@ -3353,9 +3357,9 @@ export default function App() {
                         selectedClass,
                         activeSubject,
                         academicYear,
-                        term
+                        term,
                       ),
-                      id
+                      id,
                     );
                   } catch {
                     logger.warn("processed_save_failed");
@@ -3377,7 +3381,7 @@ export default function App() {
                       subject: activeSubject,
                       academicYear,
                       term,
-                    }
+                    },
                   );
                   setAssessmentProgress(70);
                   const json: unknown = resp as unknown;
@@ -3393,7 +3397,7 @@ export default function App() {
                   ) {
                     setAssessmentErrors(
                       ((json as Record<string, unknown>).errors as string[]) ||
-                        []
+                        [],
                     );
                   } else {
                     setAssessmentProgress(100);
@@ -3415,7 +3419,7 @@ export default function App() {
                             activeSubject || "",
                             selectedClass || "",
                           ],
-                          undefined
+                          undefined,
                         );
                       } catch {
                         void 0;
@@ -3751,7 +3755,7 @@ export default function App() {
                     {excelViewerMeta?.type} ·{" "}
                     {excelViewerMeta?.size
                       ? `${(excelViewerMeta.size / (1024 * 1024)).toFixed(
-                          2
+                          2,
                         )} MB`
                       : ""}{" "}
                     {excelViewerMeta?.macro ? "· Macros detected" : ""}
@@ -3812,7 +3816,7 @@ export default function App() {
                               >
                                 {h}
                               </th>
-                            )
+                            ),
                           )}
                         </tr>
                       </thead>
@@ -3824,13 +3828,13 @@ export default function App() {
                                 (h) => (
                                   <td key={h} className="px-2 py-1">
                                     {String(
-                                      (row as Record<string, unknown>)[h] ?? ""
+                                      (row as Record<string, unknown>)[h] ?? "",
                                     )}
                                   </td>
-                                )
+                                ),
                               )}
                             </tr>
-                          )
+                          ),
                         )}
                       </tbody>
                     </table>
@@ -4111,7 +4115,7 @@ export default function App() {
                                   (row as Record<string, unknown>)[
                                     "lastname"
                                   ] ||
-                                  ""
+                                  "",
                               )}
                             </td>
                             <td className="p-2">
@@ -4120,17 +4124,18 @@ export default function App() {
                                   (row as Record<string, unknown>)[
                                     "first name"
                                   ] ||
-                                  ""
+                                  "",
                               )}
                             </td>
                             <td className="p-2">
                               {String(
-                                (row as Record<string, unknown>)["gender"] || ""
+                                (row as Record<string, unknown>)["gender"] ||
+                                  "",
                               )}
                             </td>
                             <td className="p-2">
                               {String(
-                                (row as Record<string, unknown>)["class"] || ""
+                                (row as Record<string, unknown>)["class"] || "",
                               )}
                             </td>
                           </tr>
@@ -4154,8 +4159,8 @@ export default function App() {
                         log.status === "error"
                           ? "bg-red-50 text-red-700 border-red-100"
                           : log.status === "success"
-                          ? "bg-green-50 text-green-700 border-green-100"
-                          : "bg-yellow-50 text-yellow-700 border-yellow-100"
+                            ? "bg-green-50 text-green-700 border-green-100"
+                            : "bg-yellow-50 text-yellow-700 border-yellow-100"
                       }`}
                     >
                       {log.status === "error" ? (
@@ -4205,7 +4210,7 @@ export default function App() {
                           className={`bg-white h-1 rounded-full transition-all duration-300 ${(() => {
                             const value = Math.max(
                               0,
-                              Math.min(100, Math.round(importProgress))
+                              Math.min(100, Math.round(importProgress)),
                             );
                             const steps = [
                               "w-[0%]",
@@ -4232,7 +4237,7 @@ export default function App() {
                             ];
                             const idx = Math.min(
                               steps.length - 1,
-                              Math.round(value / 5)
+                              Math.round(value / 5),
                             );
                             return steps[idx];
                           })()}`}
@@ -4476,8 +4481,8 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 font-sans pt-16">
-      <div className="fixed top-0 left-0 right-0 bg-slate-900 text-white p-4 shadow-md flex items-center justify-between z-50">
+    <div className="h-screen bg-slate-100 text-slate-900 font-sans flex flex-col overflow-hidden">
+      <div className="w-full shrink-0 bg-slate-900 text-white p-4 shadow-md flex items-center justify-between z-50">
         <div className="flex items-center space-x-3">
           {currentView !== "home" && (
             <button
@@ -4531,7 +4536,7 @@ export default function App() {
           <SignOutButton onLogout={logout} />
         </div>
       </div>
-      <main className="p-4 pb-20 overflow-y-auto overscroll-y-contain scroll-smooth main-scroll">
+      <main className="flex-1 p-4 overflow-y-auto overscroll-y-contain scroll-smooth main-scroll">
         {currentView === "home" && renderHome()}
         {currentView === "register" && (
           <div className="space-y-6 animate-in fade-in duration-500">
