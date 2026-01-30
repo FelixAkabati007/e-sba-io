@@ -27,43 +27,16 @@ const HAS_DB =
   !!process.env.POSTGRES_URL ||
   !!process.env.NEON_DATABASE_URL;
 
-function parseCookies(
-  cookieHeader: string | undefined,
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!cookieHeader) return out;
-  const parts = cookieHeader.split(";").map((s) => s.trim());
-  for (const p of parts) {
-    const idx = p.indexOf("=");
-    if (idx > 0) {
-      const k = p.slice(0, idx);
-      const v = p.slice(idx + 1);
-      try {
-        out[k] = decodeURIComponent(v);
-      } catch {
-        out[k] = v;
-      }
-    }
-  }
-  return out;
-}
-
 router.get("/csrf", (_req, res) => {
-  try {
-    const token = crypto.randomBytes(32).toString("hex");
-    const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
-    res.cookie("csrf-token", token, {
-      httpOnly: false,
-      secure: isProd,
-      sameSite: isProd ? "strict" : "lax",
-      path: "/",
-      maxAge: 30 * 60 * 1000,
-    });
-    res.json({ token });
-  } catch (err) {
-    console.error("CSRF Error:", err);
-    res.status(500).json({ error: "Failed to generate CSRF token" });
-  }
+  const token = crypto.randomBytes(32).toString("hex");
+  res.cookie("csrf-token", token, {
+    httpOnly: false,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+    path: "/",
+    maxAge: 30 * 60 * 1000,
+  });
+  res.json({ token });
 });
 
 // Login
@@ -72,11 +45,13 @@ router.post("/login", async (req, res) => {
   console.log(`[Auth] Login attempt for user: ${username}`);
 
   let cookies: Record<string, string> = {};
-  try {
-    cookies = parseCookies(req.headers.cookie);
-  } catch (err) {
-    console.warn("[Auth] Cookie parsing failed:", err);
-    cookies = {};
+  if (req.headers.cookie) {
+    req.headers.cookie.split(";").forEach((cookie) => {
+      const [key, value] = cookie.trim().split("=");
+      if (key && value) {
+        cookies[key] = decodeURIComponent(value);
+      }
+    });
   }
   const csrfHeader = String(req.headers["x-csrf-token"] || "");
   const csrfCookie = String(cookies["csrf-token"] || "");
@@ -141,17 +116,7 @@ router.post("/login", async (req, res) => {
 
   let client: PoolClient | undefined;
   try {
-    const conn = pool.connect();
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("DB connection timeout")), 5000),
-    );
-    try {
-      client = await Promise.race([conn, timeout]);
-    } catch (raceError) {
-      // If timeout wins, ensure the connection is released if it eventually completes
-      conn.then((c) => c.release()).catch(() => {});
-      throw raceError;
-    }
+    client = await pool.connect();
 
     const { rows } = await client!.query(
       `SELECT u.*, c.class_name, s.subject_name 
