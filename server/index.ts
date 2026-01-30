@@ -48,7 +48,7 @@ async function ensureInitialized(): Promise<void> {
 }
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "5mb" }));
 app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
 
@@ -85,7 +85,7 @@ app.use(
     err: unknown,
     _req: express.Request,
     res: express.Response,
-    _next: express.NextFunction
+    _next: express.NextFunction,
   ) => {
     void _next;
     const e = err as Error;
@@ -99,7 +99,7 @@ app.use(
     } catch {
       res.status(500).json({ error: "Server error" });
     }
-  }
+  },
 );
 
 app.get("/api/db/health", async (_req: Request, res: Response) => {
@@ -121,12 +121,12 @@ const storage = multer.diskStorage({
   destination: (
     _req: Request,
     _file: Express.Multer.File,
-    cb: (error: Error | null, destination: string) => void
+    cb: (error: Error | null, destination: string) => void,
   ) => cb(null, uploadDir),
   filename: (
     _req: Request,
     file: Express.Multer.File,
-    cb: (error: Error | null, filename: string) => void
+    cb: (error: Error | null, filename: string) => void,
   ) => {
     const name = path
       .parse(file.originalname)
@@ -140,10 +140,10 @@ const upload = multer({
   fileFilter: (
     _req: Request,
     file: Express.Multer.File,
-    cb: FileFilterCallback
+    cb: FileFilterCallback,
   ) => {
     const ok = [".xlsx", ".xls"].includes(
-      path.extname(file.originalname).toLowerCase()
+      path.extname(file.originalname).toLowerCase(),
     );
     if (ok) cb(null, true);
     else cb(new Error("Invalid file type"));
@@ -172,7 +172,7 @@ function cleanupUploads(dir: string, maxAgeMs: number): void {
 app.post("/api/admin/clean-master-db", async (req: Request, res: Response) => {
   try {
     const confirm = String(
-      req.query.confirm || req.headers["x-admin-confirm"] || ""
+      req.query.confirm || req.headers["x-admin-confirm"] || "",
     )
       .toLowerCase()
       .trim();
@@ -193,13 +193,13 @@ app.post("/api/admin/clean-master-db", async (req: Request, res: Response) => {
       await client.query("DELETE FROM students");
 
       const { rows: sCountRows } = await client.query(
-        "SELECT COUNT(*) AS c FROM students"
+        "SELECT COUNT(*) AS c FROM students",
       );
       const { rows: aCountRows } = await client.query(
-        "SELECT COUNT(*) AS c FROM assessments"
+        "SELECT COUNT(*) AS c FROM assessments",
       );
       const { rows: sessCountRows } = await client.query(
-        "SELECT COUNT(*) AS c FROM academic_sessions"
+        "SELECT COUNT(*) AS c FROM academic_sessions",
       );
       const sCount = parseInt(sCountRows[0]?.c || "0", 10);
       const aCount = parseInt(aCountRows[0]?.c || "0", 10);
@@ -213,24 +213,24 @@ app.post("/api/admin/clean-master-db", async (req: Request, res: Response) => {
 
       // Postgres sequences reset
       await client.query(
-        "ALTER SEQUENCE assessments_assessment_id_seq RESTART WITH 1"
+        "ALTER SEQUENCE assessments_assessment_id_seq RESTART WITH 1",
       );
       await client.query("ALTER SEQUENCE audit_logs_log_id_seq RESTART WITH 1");
       await client.query(
-        "ALTER SEQUENCE academic_sessions_session_id_seq RESTART WITH 1"
+        "ALTER SEQUENCE academic_sessions_session_id_seq RESTART WITH 1",
       );
 
       const { rows: finalStudents } = await client.query(
-        "SELECT COUNT(*) AS c FROM students"
+        "SELECT COUNT(*) AS c FROM students",
       );
       const { rows: finalAssessments } = await client.query(
-        "SELECT COUNT(*) AS c FROM assessments"
+        "SELECT COUNT(*) AS c FROM assessments",
       );
       const { rows: finalSessions } = await client.query(
-        "SELECT COUNT(*) AS c FROM academic_sessions"
+        "SELECT COUNT(*) AS c FROM academic_sessions",
       );
       const { rows: finalAudit } = await client.query(
-        "SELECT COUNT(*) AS c FROM audit_logs"
+        "SELECT COUNT(*) AS c FROM audit_logs",
       );
 
       res.json({
@@ -281,12 +281,12 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
           subject,
           className,
           academicYear,
-          term
+          term,
         );
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="${subject}_${className}_template.csv"`
+          `attachment; filename="${subject}_${className}_template.csv"`,
         );
         res.setHeader("X-Gen-Time", String(Date.now() - t0));
         res.send(csv);
@@ -296,7 +296,7 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
           subject,
           className,
           academicYear,
-          term
+          term,
         );
         const valid = validateWorkbook(buf);
         if (!valid) {
@@ -305,17 +305,17 @@ app.get("/api/assessments/template", async (req: Request, res: Response) => {
             subject,
             className,
             academicYear,
-            term
+            term,
           );
           res.setHeader("X-Fallback", "sheetjs");
         }
         res.setHeader(
           "Content-Type",
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         );
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="${subject}_${className}_template.xlsx"`
+          `attachment; filename="${subject}_${className}_template.xlsx"`,
         );
         const md5 = crypto.createHash("md5").update(buf).digest("hex");
         res.setHeader("X-Checksum-MD5", md5);
@@ -393,7 +393,7 @@ const sigUpload = multer({
   storage: sigStorage,
   fileFilter: (_req, file, cb) => {
     const ok = [".png", ".jpg", ".jpeg", ".svg"].includes(
-      path.extname(file.originalname).toLowerCase()
+      path.extname(file.originalname).toLowerCase(),
     );
     if (ok) cb(null, true);
     else cb(new Error("Invalid file type"));
@@ -429,7 +429,7 @@ app.post(
       const err = e as Error;
       res.status(500).json({ error: err.message || "Upload failed" });
     }
-  }
+  },
 );
 
 app.get("/api/signatures/list", async (req: Request, res: Response) => {
@@ -438,7 +438,7 @@ app.get("/api/signatures/list", async (req: Request, res: Response) => {
     const term = String(req.query.term || "");
     const items = await listSignatures(
       academicYear || undefined,
-      term || undefined
+      term || undefined,
     );
     res.json({ items });
   } catch (e) {
@@ -480,7 +480,7 @@ app.post(
           req.body?.path ||
           (req.file?.originalname
             ? `uploads/${req.file.originalname}`
-            : "uploads/blob.txt")
+            : "uploads/blob.txt"),
       );
       if (!token)
         return res.status(400).json({ error: "Missing BLOB_READ_WRITE_TOKEN" });
@@ -508,7 +508,7 @@ app.post(
       const err = e as Error;
       res.status(500).json({ error: err.message || "Blob upload failed" });
     }
-  }
+  },
 );
 
 app.post("/api/signatures/enable", async (req: Request, res: Response) => {
@@ -576,11 +576,11 @@ app.get(
             subject,
             className,
             academicYear,
-            term
+            term,
           );
           const safeName = `${Date.now()}_${subject}_${className}`.replace(
             /[^a-zA-Z0-9-_.]/g,
-            "_"
+            "_",
           );
           const outPath = path.join(uploadDir, `${safeName}.csv`);
           fs.writeFileSync(outPath, csv, { encoding: "utf8" });
@@ -591,7 +591,7 @@ app.get(
             subject,
             className,
             academicYear,
-            term
+            term,
           );
           let validated = validateWorkbook(buf);
           if (!validated) {
@@ -600,7 +600,7 @@ app.get(
               subject,
               className,
               academicYear,
-              term
+              term,
             );
             validated = validateWorkbook(buf);
           }
@@ -613,7 +613,7 @@ app.get(
 
           const safeName = `${Date.now()}_${subject}_${className}`.replace(
             /[^a-zA-Z0-9-_.]/g,
-            "_"
+            "_",
           );
           const outPath = path.join(uploadDir, `${safeName}.xlsx`);
           fs.writeFileSync(outPath, buf);
@@ -626,7 +626,7 @@ app.get(
       const err = e as Error;
       res.status(500).json({ error: err.message || "Failed to save template" });
     }
-  }
+  },
 );
 
 app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
@@ -643,7 +643,7 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
     try {
       const { rows: subRows } = await client.query(
         "SELECT subject_id, subject_name FROM subjects WHERE subject_name=$1 LIMIT 1",
-        [subject]
+        [subject],
       );
       const sArr = subRows as Array<{
         subject_id: number;
@@ -658,13 +658,13 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
       const subject_id = sArr[0].subject_id;
       const { rows: sessRows } = await client.query(
         "SELECT session_id FROM academic_sessions WHERE academic_year=$1 AND term=$2 LIMIT 1",
-        [academicYear, term]
+        [academicYear, term],
       );
       let session_id = sessRows[0]?.session_id;
       if (!session_id) {
         const { rows: ins } = await client.query(
           "INSERT INTO academic_sessions (academic_year, term, is_active) VALUES ($1, $2, FALSE) RETURNING session_id",
-          [academicYear, term]
+          [academicYear, term],
         );
         session_id = ins[0].session_id;
       }
@@ -690,7 +690,7 @@ app.get("/api/assessments/sheet", async (req: Request, res: Response) => {
           AND a.session_id = $3
          WHERE c.class_name = $4
          ORDER BY s.surname, s.first_name`,
-        [subject, subject_id, session_id, className]
+        [subject, subject_id, session_id, className],
       );
       res.json({ rows });
     } finally {
@@ -739,7 +739,7 @@ if (!isVercel) {
     await ensureInitialized();
     setInterval(
       () => cleanupUploads(uploadDir, 24 * 60 * 60 * 1000),
-      60 * 60 * 1000
+      60 * 60 * 1000,
     );
   });
 }

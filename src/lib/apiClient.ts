@@ -62,51 +62,71 @@ async function request<T>(
   method: HttpMethod,
   body?: unknown,
   headers?: Record<string, string>,
-  retries = 2
+  retries = 2,
 ): Promise<T> {
-  const url = `${baseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+  const base = baseUrl();
+  const primaryUrl = `${base}${path.startsWith("/") ? path : `/${path}`}`;
   const hdrs = {
     "content-type": body ? "application/json" : undefined,
     ...authHeader(),
     ...(headers || {}),
   } as Record<string, string>;
+  const useCredentials = "include";
+  const devFallbackUrl =
+    base === "/api" && typeof window !== "undefined"
+      ? `http://localhost:3001/api${path.startsWith("/") ? path : `/${path}`}`
+      : null;
+  async function fetchOnce(u: string): Promise<T> {
+    const resp = await fetch(u, {
+      method,
+      headers: hdrs,
+      body: body ? JSON.stringify(body) : undefined,
+      credentials: useCredentials as RequestCredentials,
+    });
+    const ct = resp.headers.get("content-type") || "";
+    const isJson = ct.includes("application/json");
+    const data = isJson
+      ? ((await resp.json()) as unknown)
+      : ((await resp.text()) as unknown);
+    if (!resp.ok) {
+      let err = `HTTP ${resp.status}`;
+      if (isJson) {
+        const d = data as { error?: string; details?: string };
+        if (d.error) err = d.error;
+        if (d.details) err += ` (${d.details})`;
+        if (!d.error && !d.details) err += ` (Body: ${JSON.stringify(d)})`;
+      } else if (String(data)) {
+        err = String(data);
+      } else {
+        err += " (Empty response)";
+      }
+      throw new Error(err);
+    }
+    return data as T;
+  }
+  let lastErr: Error | null = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const resp = await fetch(url, {
-        method,
-        headers: hdrs,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      const ct = resp.headers.get("content-type") || "";
-      const isJson = ct.includes("application/json");
-      const data = isJson
-        ? ((await resp.json()) as unknown)
-        : ((await resp.text()) as unknown);
-      if (!resp.ok) {
-        let err = `HTTP ${resp.status}`;
-        if (isJson) {
-          const d = data as { error?: string; details?: string };
-          if (d.error) err = d.error;
-          if (d.details) err += ` (${d.details})`;
-          if (!d.error && !d.details) err += ` (Body: ${JSON.stringify(d)})`;
-        } else if (String(data)) {
-          err = String(data);
-        } else {
-          err += " (Empty response)";
-        }
-        throw new Error(err);
-      }
-      return data as T;
+      return await fetchOnce(primaryUrl);
     } catch (e) {
       const msg = (e as Error).message || String(e);
       logger.warn("api_request_retry", { path, attempt, msg });
-      if (attempt === retries) throw e;
+      if (attempt === 0 && devFallbackUrl) {
+        try {
+          return await fetchOnce(devFallbackUrl);
+        } catch (e2) {
+          lastErr = e2 as Error;
+        }
+      } else {
+        lastErr = e as Error;
+      }
+      if (attempt === retries) throw lastErr || e;
       await new Promise((r) =>
-        setTimeout(r, Math.min(1000 * (attempt + 1), 3000))
+        setTimeout(r, Math.min(1000 * (attempt + 1), 3000)),
       );
     }
   }
-  throw new Error("Request failed");
+  throw lastErr || new Error("Request failed");
 }
 
 async function uploadFile<T>(
@@ -114,7 +134,7 @@ async function uploadFile<T>(
   file: File,
   query: Record<string, string>,
   headers?: Record<string, string>,
-  retries = 1
+  retries = 1,
 ): Promise<T> {
   const qs = Object.keys(query)
     .map((k) => `${encodeURIComponent(k)}=${encodeURIComponent(query[k])}`)
@@ -150,7 +170,7 @@ async function uploadFile<T>(
       logger.warn("api_upload_retry", { path, attempt, msg });
       if (attempt === retries) throw e;
       await new Promise((r) =>
-        setTimeout(r, Math.min(1000 * (attempt + 1), 3000))
+        setTimeout(r, Math.min(1000 * (attempt + 1), 3000)),
       );
     }
   }
@@ -167,24 +187,24 @@ export const apiClient = {
   > {
     return request(
       `/reports/attendance/class?className=${encodeURIComponent(
-        q.className
+        q.className,
       )}&academicYear=${encodeURIComponent(
-        q.academicYear
+        q.academicYear,
       )}&term=${encodeURIComponent(q.term)}`,
-      "GET"
+      "GET",
     );
   },
   async getSubjectSheet(q: SubjectSheetQuery): Promise<SubjectSheetResponse> {
     return request<SubjectSheetResponse>(
       `/assessments?subject=${encodeURIComponent(
-        q.subject
+        q.subject,
       )}&class=${encodeURIComponent(q.class)}&year=${encodeURIComponent(
-        q.academicYear
+        q.academicYear,
       )}&term=${encodeURIComponent(q.term)}`,
       "GET",
       undefined,
       undefined,
-      2
+      2,
     );
   },
   async getAllClassMarks(q: {
@@ -196,14 +216,14 @@ export const apiClient = {
       allMarks: Record<string, AssessmentMarkRow[]>;
     }>(
       `/assessments?class=${encodeURIComponent(
-        q.class
+        q.class,
       )}&year=${encodeURIComponent(q.academicYear)}&term=${encodeURIComponent(
-        q.term
+        q.term,
       )}`,
       "GET",
       undefined,
       undefined,
-      2
+      2,
     );
     return data.allMarks;
   },
@@ -213,7 +233,7 @@ export const apiClient = {
       "GET",
       undefined,
       undefined,
-      2
+      2,
     );
   },
   async upsertStudent(student: StudentRecord): Promise<void> {
@@ -224,12 +244,12 @@ export const apiClient = {
   },
   async uploadAssessments(
     file: File,
-    q: UploadAssessmentQuery
+    q: UploadAssessmentQuery,
   ): Promise<UploadAssessmentResponse> {
     return uploadFile<UploadAssessmentResponse>(
       "/assessments/upload",
       file,
-      q as Record<string, string>
+      q as Record<string, string>,
     );
   },
   async getTalentRemarks(): Promise<{
@@ -272,7 +292,7 @@ export const apiClient = {
     academicYear: string,
     term: string,
     page = 1,
-    limit = 50
+    limit = 50,
   ): Promise<{
     data: Array<{
       student_id: string;
@@ -287,17 +307,17 @@ export const apiClient = {
   }> {
     return request(
       `/reporting/rankings?class=${encodeURIComponent(
-        baseClass
+        baseClass,
       )}&academicYear=${encodeURIComponent(
-        academicYear
+        academicYear,
       )}&term=${encodeURIComponent(term)}&page=${page}&limit=${limit}`,
-      "GET"
+      "GET",
     );
   },
   async adminClean(confirm = "yes"): Promise<unknown> {
     return request(
       `/admin/clean-master-db?confirm=${encodeURIComponent(confirm)}`,
-      "POST"
+      "POST",
     );
   },
   async markDailyAttendance(data: {
@@ -313,7 +333,7 @@ export const apiClient = {
   },
   async getDailyClassAttendance(
     className: string,
-    date: string
+    date: string,
   ): Promise<{
     data: Array<{
       student_id: string;
@@ -326,16 +346,16 @@ export const apiClient = {
   }> {
     return request(
       `/attendance/daily?className=${encodeURIComponent(
-        className
+        className,
       )}&date=${encodeURIComponent(date)}`,
-      "GET"
+      "GET",
     );
   },
   async request<T = unknown>(
     path: string,
     method: HttpMethod,
     body?: unknown,
-    headers?: Record<string, string>
+    headers?: Record<string, string>,
   ): Promise<T> {
     return request<T>(path, method, body, headers);
   },
