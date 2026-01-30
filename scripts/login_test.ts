@@ -4,8 +4,8 @@ async function run() {
     headers: {},
     redirect: "manual",
   });
-  const data = (await csrfResp.json()) as { token: string };
-  const token = data.token;
+  const csrfData = (await csrfResp.json()) as { token: string };
+  const token = csrfData.token;
   const cookie = csrfResp.headers.get("set-cookie") || "";
   const loginResp = await fetch("http://localhost:5174/api/auth/login", {
     method: "POST",
@@ -17,8 +17,8 @@ async function run() {
     body: JSON.stringify({ username: "teacher_1a", password: "password123" }),
     redirect: "manual",
   });
-  const data = await loginResp.json();
+  const loginData = await loginResp.json();
   console.log("Status:", loginResp.status);
-  console.log("Body:", data);
+  console.log("Body:", loginData);
 }
 run();

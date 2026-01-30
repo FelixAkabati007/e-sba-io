@@ -74,10 +74,7 @@ app.use("/api/sync", syncRouter);
 // Serve built client app (dist) for production deployments
 app.use(express.static(path.join(process.cwd(), "dist")));
 
-// Catch-all route to serve index.html for client-side routing
-app.get(/.*/, (_req, res) => {
-  res.sendFile(path.join(process.cwd(), "dist", "index.html"));
-});
+// Catch-all route removed (was shadowing API routes). See bottom of file for correct fallback.
 
 // Global error handler to ensure JSON errors (including Multer/file upload issues)
 app.use(
@@ -721,7 +718,7 @@ app.get(/.*/, (_req: Request, res: Response) => {
     res.status(404).send("Not Found");
   }
 });
-if (!isVercel) {
+if (!isVercel && process.env.NODE_ENV !== "test") {
   app.listen(port, async () => {
     const conn =
       process.env.DATABASE_URL ||
