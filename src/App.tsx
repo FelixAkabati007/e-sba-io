@@ -4481,7 +4481,7 @@ export default function App() {
   );
 
   return (
-    <div className="h-screen bg-slate-100 text-slate-900 font-sans flex flex-col overflow-hidden">
+    <div className="h-[100dvh] bg-slate-100 text-slate-900 font-sans flex flex-col overflow-hidden">
       <div className="w-full shrink-0 bg-slate-900 text-white p-4 shadow-md flex items-center justify-between z-50">
         <div className="flex items-center space-x-3">
           {currentView !== "home" && (
@@ -4536,7 +4536,7 @@ export default function App() {
           <SignOutButton onLogout={logout} />
         </div>
       </div>
-      <main className="flex-1 p-4 overflow-y-auto overscroll-y-contain scroll-smooth main-scroll">
+      <main className="flex-1 w-full p-4 overflow-y-auto overscroll-y-contain scroll-smooth main-scroll">
         {currentView === "home" && renderHome()}
         {currentView === "register" && (
           <div className="space-y-6 animate-in fade-in duration-500">
