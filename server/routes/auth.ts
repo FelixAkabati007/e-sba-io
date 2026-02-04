@@ -38,7 +38,10 @@ router.get("/csrf", (_req, res) => {
         ? "strict"
         : "lax";
   const secureEnv = String(process.env.CSRF_SECURE || "").toLowerCase();
-  const secure = secureEnv === "1" || secureEnv === "true" || isProd;
+  const secure =
+    secureEnv === "1" ||
+    secureEnv === "true" ||
+    (isProd && secureEnv !== "false");
   res.cookie("csrf-token", token, {
     httpOnly: false,
     secure,
@@ -59,7 +62,11 @@ router.post("/login", async (req, res) => {
     req.headers.cookie.split(";").forEach((cookie) => {
       const [key, value] = cookie.trim().split("=");
       if (key && value) {
-        cookies[key] = decodeURIComponent(value);
+        try {
+          cookies[key] = decodeURIComponent(value);
+        } catch {
+          cookies[key] = value;
+        }
       }
     });
   }
@@ -70,8 +77,10 @@ router.post("/login", async (req, res) => {
   }
 
   const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
+  const currentSecret =
+    process.env.JWT_SECRET || "super-secret-key-change-this";
   const misconfiguredSecret =
-    isProd && JWT_SECRET === "super-secret-key-change-this";
+    isProd && currentSecret === "super-secret-key-change-this";
   if (misconfiguredSecret && HAS_DB) {
     return res
       .status(503)

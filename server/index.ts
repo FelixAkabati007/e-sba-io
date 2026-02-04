@@ -536,6 +536,8 @@ app.post("/api/signatures/enable", async (req: Request, res: Response) => {
 // Centralized error handling for uploads to avoid generic 500s
 app.use((err: unknown, _req: Request, res: Response, _next: () => void) => {
   void _next;
+  console.error("[Global Error Handler]", err);
+
   if (err instanceof MulterError) {
     const code = err.code;
     const map: Record<string, string> = {
@@ -544,14 +546,25 @@ app.use((err: unknown, _req: Request, res: Response, _next: () => void) => {
     };
     return res.status(400).json({ error: map[code] || "Upload error", code });
   }
+
   if (err instanceof Error) {
-    if (err.message.toLowerCase().includes("invalid file type")) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes("invalid file type")) {
       return res
         .status(400)
         .json({ error: "Invalid file type. Only PNG/JPEG allowed." });
     }
+
+    // Handle Postgres errors specifically if needed
+    // e.g. 23505 = unique_violation
+    const code = (err as { code?: string }).code;
+    if (code === "23505") {
+      return res.status(409).json({ error: "Duplicate entry already exists." });
+    }
+
     return res.status(500).json({ error: err.message || "Server error" });
   }
+
   return res.status(500).json({ error: "Unknown error" });
 });
 

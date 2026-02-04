@@ -252,6 +252,12 @@ export async function seedAuth() {
       }
     }
 
+    // Seed Head user with requested credentials
+    await client.query(
+      "INSERT INTO users (username, password_hash, full_name, role) VALUES ($1, $2, $3, $4) ON CONFLICT (username) DO NOTHING",
+      ["head", defaultPass, "Head Master", "HEAD"]
+    );
+
     await client.query("COMMIT");
   } catch (e) {
     await client.query("ROLLBACK");

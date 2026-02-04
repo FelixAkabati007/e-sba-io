@@ -13,6 +13,7 @@
     "jsx": "react-jsx",
     "strict": true,
     "baseUrl": ".",
+    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"],
     "paths": {
       "@lib/*": ["src/lib/*"],
       "@components/*": ["src/components/*"]

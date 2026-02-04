@@ -3,10 +3,13 @@ import app from "../index";
 import jwt from "jsonwebtoken";
 import { describe, it, expect } from "vitest";
 
-const SECRET = process.env.JWT_SECRET || "default_secret";
+const SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
+const ISSUER = process.env.JWT_ISSUER || "e-sba";
+const AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const mockToken = jwt.sign(
   { id: 1, username: "test_admin", role: "HEAD" },
-  SECRET
+  SECRET,
+  { issuer: ISSUER, audience: AUDIENCE }
 );
 
 describe("/api/assessments/template", () => {
@@ -24,7 +27,7 @@ describe("/api/assessments/template", () => {
     expect([200, 400, 500]).toContain(res.status);
     if (res.status === 200) {
       expect(res.headers["content-type"]).toContain(
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       );
       const bodyOrText = Buffer.isBuffer(res.body) ? res.body : res.text;
       expect(bodyOrText).toBeTruthy();

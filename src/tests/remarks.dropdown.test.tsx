@@ -58,16 +58,19 @@ describe("Remarks dropdowns", () => {
     const { findByRole } = render(
       <AuthProvider>
         <App />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     const reportBtn = await findByRole("button", { name: /Report Cards/i });
     fireEvent.click(reportBtn);
 
-    const talentSelect = await screen.findByLabelText(
-      "Talent and interest remark"
+    const talentSelects = await screen.findAllByLabelText(
+      "Talent and interest remark",
     );
-    expect(talentSelect).toBeInTheDocument();
+    expect(talentSelects.length).toBeGreaterThan(0);
+    const talentSelect = talentSelects[0];
+
+    expect(talentSelect).toBeTruthy();
 
     // Select a valid option then clear it to trigger validation
     fireEvent.change(talentSelect, {
@@ -75,22 +78,24 @@ describe("Remarks dropdowns", () => {
     });
     fireEvent.change(talentSelect, { target: { value: "" } });
 
-    expect(talentSelect).toHaveClass("border-red-500");
+    expect(talentSelect.classList.contains("border-red-500")).toBe(true);
   });
 
   it("Talent remark Other enforces 20+ characters", async () => {
     const { getByLabelText, findByRole } = render(
       <AuthProvider>
         <App />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     const reportBtn = await findByRole("button", { name: /Report Cards/i });
     fireEvent.click(reportBtn);
 
-    const talentSelect = await screen.findByLabelText(
-      "Talent and interest remark"
+    const talentSelects = await screen.findAllByLabelText(
+      "Talent and interest remark",
     );
+    const talentSelect = talentSelects[0];
+
     fireEvent.change(talentSelect, { target: { value: "Other" } });
 
     const input = getByLabelText("Custom talent remark");
@@ -101,10 +106,11 @@ describe("Remarks dropdowns", () => {
   });
 
   it("Headmaster's Remarks line renders 100 underscores", async () => {
+    vi.mocked(apiClient.getStudents).mockResolvedValue([]);
     const { findByRole } = render(
       <AuthProvider>
         <App />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     const reportBtn = await findByRole("button", { name: /Report Cards/i });

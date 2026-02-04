@@ -30,9 +30,11 @@ describe("Auth configuration and CSRF", () => {
   it("rejects login when JWT_SECRET is not set in production", async () => {
     process.env.NODE_ENV = "production";
     process.env.JWT_SECRET = "super-secret-key-change-this";
-    const csrf = await request(app).get("/api/auth/csrf");
+    process.env.CSRF_SECURE = "false"; // Allow cookie over HTTP in tests
+    const agent = request.agent(app);
+    const csrf = await agent.get("/api/auth/csrf");
     const token = csrf.body?.token || "";
-    const res = await request(app)
+    const res = await agent
       .post("/api/auth/login")
       .set("x-csrf-token", token)
       .send({ username: "u", password: "p" });

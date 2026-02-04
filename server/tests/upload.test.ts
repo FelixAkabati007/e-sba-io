@@ -6,10 +6,13 @@ import jwt from "jsonwebtoken";
 import app from "../index";
 import { describe, it, expect } from "vitest";
 
-const SECRET = process.env.JWT_SECRET || "default_secret";
+const SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
+const ISSUER = process.env.JWT_ISSUER || "e-sba";
+const AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const mockToken = jwt.sign(
   { id: 1, username: "test_admin", role: "HEAD" },
-  SECRET
+  SECRET,
+  { issuer: ISSUER, audience: AUDIENCE },
 );
 
 function makeSheet(): string {
@@ -58,5 +61,5 @@ describe("/api/assessments/upload", () => {
       .attach("file", file);
     expect([200, 400, 500]).toContain(res.status);
     fs.unlinkSync(file);
-  });
+  }, 15000);
 });

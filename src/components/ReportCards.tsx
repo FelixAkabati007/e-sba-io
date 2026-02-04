@@ -49,7 +49,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
   const [teacherRemark, setTeacherRemark] = useState("");
   const [teacherRemarkOther, setTeacherRemarkOther] = useState("");
   const [talentRemarkError, setTalentRemarkError] = useState<string | null>(
-    null
+    null,
   );
   const [, setTeacherRemarkError] = useState<string | null>(null);
   const [isGeneratingDoc, setIsGeneratingDoc] = useState(false);
@@ -253,7 +253,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             headers: {
               Authorization: `Bearer ${localStorage.getItem("token")}`,
             },
-          }
+          },
         );
         if (tRes.ok) {
           const tData = await tRes.json();
@@ -267,7 +267,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             headers: {
               Authorization: `Bearer ${localStorage.getItem("token")}`,
             },
-          }
+          },
         );
         if (aRes.ok) {
           const aData = await aRes.json();
@@ -441,7 +441,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
           doc.setFont("helvetica", "bold");
           const nameLines = doc.splitTextToSize(
             schoolConfig.name.toUpperCase(),
-            160
+            160,
           );
           doc.text(nameLines, centerX, currentY, {
             align: "center",
@@ -454,7 +454,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
           doc.setFont("helvetica", "normal");
           const addressLines = doc.splitTextToSize(
             schoolConfig.address,
-            maxWidth
+            maxWidth,
           );
           doc.text(addressLines, centerX, currentY, { align: "center" });
           currentY += addressLines.length * 5 + 2;
@@ -497,7 +497,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             value: string,
             x: number,
             y: number,
-            maxWidth?: number
+            maxWidth?: number,
           ) => {
             doc.setFont("helvetica", "bold");
             doc.text(label, x, y);
@@ -517,7 +517,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             "Name:",
             `${student.surname}, ${student.firstName} ${student.middleName}`,
             leftX,
-            startY
+            startY,
           );
           drawField("ID:", student.id, rightX, startY);
           drawField("Class:", student.class, leftX, startY + lineHeight);
@@ -525,7 +525,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             "Term:",
             `${term}, ${academicYear}`,
             rightX,
-            startY + lineHeight
+            startY + lineHeight,
           );
           drawField("DOB:", student.dob, leftX, startY + lineHeight * 2);
           drawField(
@@ -533,7 +533,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
             student.guardianContact,
             rightX,
             startY + lineHeight * 2,
-            85
+            85,
           );
           const subjectRanks: Record<string, string> = {};
           SUBJECTS.forEach((subj) => {
@@ -756,7 +756,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
           // Signature
           if (schoolConfig.signatureEnabled && headSignatureDataUrl) {
             const fmt: "JPEG" | "PNG" = headSignatureDataUrl.startsWith(
-              "data:image/jpeg"
+              "data:image/jpeg",
             )
               ? "JPEG"
               : "PNG";
@@ -1061,7 +1061,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                     if (user?.role === "CLASS") {
                       e.stopPropagation();
                       alert(
-                        "Access Denied: You do not have permission to edit Attendance."
+                        "Access Denied: You do not have permission to edit Attendance.",
                       );
                     }
                   }}
@@ -1124,7 +1124,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="talent-remark" className="sr-only">
-                      Select talent remark
+                      Talent and interest remark
                     </label>
                     <select
                       id="talent-remark"
@@ -1132,7 +1132,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                       onChange={(e) => {
                         setTalentRemark(e.target.value);
                         setTalentRemarkError(
-                          e.target.value ? null : "Required"
+                          e.target.value ? null : "Required",
                         );
                       }}
                       className={`w-full text-xs border rounded p-1.5 bg-white ${
@@ -1140,7 +1140,6 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                           ? "border-red-500"
                           : "border-slate-300"
                       }`}
-                      aria-label="Talent and interest remark"
                     >
                       <option value="">Select a remark...</option>
                       {talentRemarkOptionsGrouped.map((g) => (
@@ -1165,7 +1164,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                           setTalentRemarkError(
                             e.target.value.length >= 20
                               ? null
-                              : "Minimum 20 characters"
+                              : "Minimum 20 characters",
                           );
                         }}
                         className={`w-full text-xs border rounded p-1.5 ${
@@ -1187,7 +1186,7 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                   </div>
                   <div className="space-y-2">
                     <label htmlFor="teacher-remark" className="sr-only">
-                      Select teacher remark
+                      Teacher remark
                     </label>
                     <select
                       id="teacher-remark"
@@ -1195,11 +1194,10 @@ const ReportCards: React.FC<ReportCardsProps> = ({
                       onChange={(e) => {
                         setTeacherRemark(e.target.value);
                         setTeacherRemarkError(
-                          e.target.value ? null : "Required"
+                          e.target.value ? null : "Required",
                         );
                       }}
                       className="w-full text-xs border border-slate-300 rounded p-1.5 bg-white"
-                      aria-label="Teacher remark"
                     >
                       <option value="">Select a remark...</option>
                       {teacherRemarkOptions.map((opt) => (

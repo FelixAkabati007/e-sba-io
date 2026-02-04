@@ -77,12 +77,16 @@ async function request<T>(
       ? `http://localhost:3001/api${path.startsWith("/") ? path : `/${path}`}`
       : null;
   async function fetchOnce(u: string): Promise<T> {
+    const controller = new AbortController();
+    const timeoutMs = 15000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const resp = await fetch(u, {
       method,
       headers: hdrs,
       body: body ? JSON.stringify(body) : undefined,
       credentials: useCredentials as RequestCredentials,
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
     const ct = resp.headers.get("content-type") || "";
     const isJson = ct.includes("application/json");
     const data = isJson
@@ -105,12 +109,23 @@ async function request<T>(
     return data as T;
   }
   let lastErr: Error | null = null;
+  const backoff = (attempt: number) =>
+    Math.min(1000 * Math.pow(2, attempt), 5000);
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fetchOnce(primaryUrl);
     } catch (e) {
       const msg = (e as Error).message || String(e);
-      logger.warn("api_request_retry", { path, attempt, msg });
+      const isRetryable =
+        msg.includes("HTTP 5") ||
+        msg.includes("Failed to fetch") ||
+        msg.includes("NetworkError") ||
+        msg.includes("The operation was aborted") ||
+        msg.includes("Empty response");
+
+      logger.warn("api_request_retry", { path, attempt, msg, isRetryable });
+
       if (attempt === 0 && devFallbackUrl) {
         try {
           return await fetchOnce(devFallbackUrl);
@@ -120,10 +135,9 @@ async function request<T>(
       } else {
         lastErr = e as Error;
       }
-      if (attempt === retries) throw lastErr || e;
-      await new Promise((r) =>
-        setTimeout(r, Math.min(1000 * (attempt + 1), 3000)),
-      );
+
+      if (attempt === retries || !isRetryable) throw lastErr || e;
+      await new Promise((r) => setTimeout(r, backoff(attempt)));
     }
   }
   throw lastErr || new Error("Request failed");
