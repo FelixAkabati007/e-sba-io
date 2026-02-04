@@ -57,7 +57,7 @@ function authHeader(): Record<string, string> {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   method: HttpMethod,
   body?: unknown,
@@ -74,39 +74,49 @@ async function request<T>(
   const useCredentials = "include";
   const devFallbackUrl =
     base === "/api" && typeof window !== "undefined"
-      ? `http://localhost:3001/api${path.startsWith("/") ? path : `/${path}`}`
+      ? `http://127.0.0.1:3001/api${path.startsWith("/") ? path : `/${path}`}`
       : null;
   async function fetchOnce(u: string): Promise<T> {
     const controller = new AbortController();
     const timeoutMs = 15000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
-    const resp = await fetch(u, {
-      method,
-      headers: hdrs,
-      body: body ? JSON.stringify(body) : undefined,
-      credentials: useCredentials as RequestCredentials,
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeout));
-    const ct = resp.headers.get("content-type") || "";
-    const isJson = ct.includes("application/json");
-    const data = isJson
-      ? ((await resp.json()) as unknown)
-      : ((await resp.text()) as unknown);
-    if (!resp.ok) {
-      let err = `HTTP ${resp.status}`;
-      if (isJson) {
-        const d = data as { error?: string; details?: string };
-        if (d.error) err = d.error;
-        if (d.details) err += ` (${d.details})`;
-        if (!d.error && !d.details) err += ` (Body: ${JSON.stringify(d)})`;
-      } else if (String(data)) {
-        err = String(data);
-      } else {
-        err += " (Empty response)";
+    try {
+      const resp = await fetch(u, {
+        method,
+        headers: hdrs,
+        body: body ? JSON.stringify(body) : undefined,
+        credentials: useCredentials as RequestCredentials,
+        signal: controller.signal,
+      });
+      const ct = resp.headers.get("content-type") || "";
+      const isJson = ct.includes("application/json");
+      const data = isJson
+        ? ((await resp.json()) as unknown)
+        : ((await resp.text()) as unknown);
+      if (!resp.ok) {
+        let err = `HTTP ${resp.status}`;
+        if (isJson) {
+          const d = data as { error?: string; details?: string };
+          if (d.error) err = d.error;
+          if (d.details) err += ` (${d.details})`;
+          if (!d.error && !d.details) err += ` (Body: ${JSON.stringify(d)})`;
+        } else if (String(data)) {
+          err = String(data);
+        } else {
+          err += " (Empty response)";
+        }
+        throw new Error(err);
       }
-      throw new Error(err);
+      return data as T;
+    } catch (error) {
+      const e = error as Error;
+      if (e.name === "AbortError") throw new Error("Request timed out");
+      if (e.message.includes("Failed to fetch"))
+        throw new Error("Network Error: Unable to connect to server");
+      throw e;
+    } finally {
+      clearTimeout(timeout);
     }
-    return data as T;
   }
   let lastErr: Error | null = null;
   const backoff = (attempt: number) =>

@@ -42,6 +42,7 @@ router.get("/csrf", (_req, res) => {
     secureEnv === "1" ||
     secureEnv === "true" ||
     (isProd && secureEnv !== "false");
+
   res.cookie("csrf-token", token, {
     httpOnly: false,
     secure,
@@ -72,6 +73,7 @@ router.post("/login", async (req, res) => {
   }
   const csrfHeader = String(req.headers["x-csrf-token"] || "");
   const csrfCookie = String(cookies["csrf-token"] || "");
+
   if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
     return res.status(403).json({ error: "Forbidden: CSRF validation failed" });
   }

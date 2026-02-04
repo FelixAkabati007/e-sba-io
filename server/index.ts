@@ -739,7 +739,7 @@ app.get(/.*/, (_req: Request, res: Response) => {
   }
 });
 if (!isVercel && process.env.NODE_ENV !== "test") {
-  app.listen(port, async () => {
+  app.listen(port, "0.0.0.0", async () => {
     const conn =
       process.env.DATABASE_URL ||
       process.env.POSTGRES_URL ||
