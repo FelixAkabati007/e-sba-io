@@ -181,6 +181,15 @@ async function uploadFile<T>(
 }
 
 export const apiClient = {
+  async getOnboarding() {
+    return request<{ organizationId: number; completedSteps: string[]; dismissed: boolean; steps: Array<{ id: string; label: string }> }>("/onboarding", "GET");
+  },
+  async completeOnboardingStep(step: string) {
+    return request<void>("/onboarding/progress", "POST", { step });
+  },
+  async dismissOnboarding() {
+    return request<void>("/onboarding/dismiss", "POST");
+  },
   async getClassAttendance(q: {
     className: string;
     academicYear: string;
