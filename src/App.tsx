@@ -68,9 +68,7 @@ async function uploadFileChunked(
   file: File,
   onProgress: (pct: number) => void,
 ): Promise<number> {
-  const token =
-    localStorage.getItem("token") || localStorage.getItem("API_AUTH_TOKEN");
-  const headers = { Authorization: `Bearer ${token}` };
+  const headers: Record<string, string> = {};
 
   // 1. Init
   const initRes = await fetch("/api/students/upload/init", {
