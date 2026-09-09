@@ -15,7 +15,7 @@ export type User = {
 type AuthContextType = {
   user: User | null;
   token: string | null;
-  login: (token: string, user: User) => void;
+  login: (token: string | undefined, user: User) => void;
   logout: () => void;
   isAuthenticated: boolean;
 };
@@ -26,9 +26,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
+  const [token, setToken] = useState<string | null>("cookie");
 
   useEffect(() => {
     if (token) {
@@ -43,14 +41,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [token]);
 
-  const login = (newToken: string, newUser: User) => {
-    localStorage.setItem("token", newToken);
-    setToken(newToken);
+  const login = (_newToken: string | undefined, newUser: User) => {
+    setToken("cookie");
     setUser(newUser);
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    void apiClient.request("/auth/logout", "POST").catch(() => undefined);
     setToken(null);
     setUser(null);
   };

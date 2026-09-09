@@ -22,7 +22,7 @@ const Login: React.FC = () => {
         "GET"
       );
       const data = await apiClient.request<{
-        token: string;
+        token?: string;
         user: AuthUser;
       }>(
         "/auth/login",

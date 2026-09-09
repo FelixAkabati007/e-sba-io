@@ -11,6 +11,17 @@ const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
 const JWT_ISSUER = process.env.JWT_ISSUER || "e-sba";
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const SESSION_TTL_MIN = parseInt(process.env.SESSION_TTL_MIN || "120", 10);
+const SESSION_COOKIE = "e_sba_session";
+
+function setSessionCookie(res: express.Response, token: string) {
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_TTL_MIN * 60 * 1000,
+  });
+}
 type DBUserRow = {
   user_id: number;
   username: string;
@@ -129,8 +140,8 @@ router.post("/login", async (req, res) => {
       JWT_SECRET,
       { expiresIn: "8h" },
     );
+    setSessionCookie(res, token);
     return res.json({
-      token,
       user: {
         id: 0,
         username: uEnv,
@@ -184,8 +195,8 @@ router.post("/login", async (req, res) => {
       { expiresIn: `${SESSION_TTL_MIN}m` },
     );
 
+    setSessionCookie(res, token);
     res.json({
-      token,
       user: {
         id: user.user_id,
         username: user.username,
@@ -218,6 +229,11 @@ router.post("/login", async (req, res) => {
   } finally {
     if (client) client.release();
   }
+});
+
+router.post("/logout", (_req, res) => {
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: "lax", path: "/" });
+  res.status(204).end();
 });
 
 // Get Current User
