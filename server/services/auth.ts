@@ -263,6 +263,21 @@ export async function seedAuth() {
       )
     `);
     await client.query(`
+      CREATE TABLE IF NOT EXISTS permissions (
+        permission_id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT ''
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS role_permissions (
+        organization_id INT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        permission_id INT NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
+        PRIMARY KEY (organization_id, role, permission_id)
+      )
+    `);
+    await client.query(`
       CREATE TABLE IF NOT EXISTS organization_members (
         organization_id INT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
         user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -308,6 +323,22 @@ export async function seedAuth() {
       WHERE organization_id IS NOT NULL
       ON CONFLICT (organization_id, user_id) DO NOTHING
     `);
+    const permissionNames = [
+      "organizations.read", "organizations.manage", "members.read", "members.manage",
+      "students.read", "students.manage", "assessments.read", "assessments.manage",
+      "reports.read", "billing.read", "billing.manage", "audit.read",
+    ];
+    for (const name of permissionNames) {
+      await client.query(`INSERT INTO permissions (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [name]);
+    }
+    await client.query(`
+      INSERT INTO role_permissions (organization_id, role, permission_id)
+      SELECT $1, roles.role, p.permission_id
+      FROM (VALUES ('OWNER'), ('ADMIN'), ('MEMBER'), ('GUEST')) AS roles(role)
+      CROSS JOIN permissions p
+      WHERE roles.role IN ('OWNER', 'ADMIN') OR p.name IN ('organizations.read', 'members.read', 'students.read', 'assessments.read', 'reports.read')
+      ON CONFLICT DO NOTHING
+    `, [organizationId]);
 
     await client.query("COMMIT");
   } catch (e) {
