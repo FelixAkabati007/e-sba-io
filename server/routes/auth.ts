@@ -13,10 +13,18 @@ const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const SESSION_TTL_MIN = parseInt(process.env.SESSION_TTL_MIN || "120", 10);
 const SESSION_COOKIE = "e_sba_session";
 
-function setSessionCookie(res: express.Response, token: string) {
+function isHttps(req: express.Request): boolean {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  return req.secure || forwardedProto === "https";
+}
+
+function setSessionCookie(req: express.Request, res: express.Response, token: string) {
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: isHttps(req),
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_MIN * 60 * 1000,
@@ -52,7 +60,8 @@ router.get("/csrf", (_req, res) => {
   const secure =
     secureEnv === "1" ||
     secureEnv === "true" ||
-    (isProd && secureEnv !== "false");
+    (isProd && secureEnv !== "false" &&
+      (req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https")));
 
   res.cookie("csrf-token", token, {
     httpOnly: false,
@@ -140,7 +149,7 @@ router.post("/login", async (req, res) => {
       JWT_SECRET,
       { expiresIn: "8h" },
     );
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     return res.json({
       user: {
         id: 0,
@@ -195,7 +204,7 @@ router.post("/login", async (req, res) => {
       { expiresIn: `${SESSION_TTL_MIN}m` },
     );
 
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     res.json({
       user: {
         id: user.user_id,

@@ -53,6 +53,7 @@ async function ensureInitialized(): Promise<void> {
 }
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(cors({ origin: true, credentials: true }));
 app.use((req, res, next) => {
   const requestId = req.header("x-request-id") || crypto.randomUUID();
