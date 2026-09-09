@@ -5,7 +5,15 @@ import Login from "../pages/Login";
 export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, token, isAuthenticated } = useAuth();
+  const { user, token, isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center" role="status" aria-label="Loading">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-blue-200 border-t-blue-600" />
+      </div>
+    );
+  }
 
   // If we have a token but no user yet (loading), we might want to show a spinner.
   // But for simplicity, we'll let AuthProvider handle the initial load.
