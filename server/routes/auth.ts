@@ -46,7 +46,7 @@ const HAS_DB =
   !!process.env.POSTGRES_URL ||
   !!process.env.NEON_DATABASE_URL;
 
-router.get("/csrf", (_req, res) => {
+router.get("/csrf", (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
   const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
   const sameSiteEnv = String(process.env.CSRF_SAMESITE || "").toLowerCase();
@@ -81,7 +81,9 @@ router.post("/login", async (req, res) => {
   const cookies: Record<string, string> = {};
   if (req.headers.cookie) {
     req.headers.cookie.split(";").forEach((cookie) => {
-      const [key, value] = cookie.trim().split("=");
+      const separator = cookie.indexOf("=");
+      const key = separator >= 0 ? cookie.slice(0, separator).trim() : cookie.trim();
+      const value = separator >= 0 ? cookie.slice(separator + 1).trim() : "";
       if (key && value) {
         try {
           cookies[key] = decodeURIComponent(value);
@@ -95,7 +97,8 @@ router.post("/login", async (req, res) => {
   const csrfCookie = String(cookies["csrf-token"] || "");
 
   if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
-    return res.status(403).json({ error: "Forbidden: CSRF validation failed" });
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(403).json({ error: "Forbidden: CSRF validation failed", code: "CSRF_MISMATCH" });
   }
 
   const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";

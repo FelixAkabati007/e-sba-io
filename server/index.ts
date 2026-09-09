@@ -73,7 +73,17 @@ app.use((_req, res, next) => {
 });
 
 app.use(express.json({ limit: "5mb" }));
-app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    keyGenerator: (req) => req.ip || req.socket.remoteAddress || "unknown",
+    validate: {
+      xForwardedForHeader: false,
+      forwardedHeader: false,
+    },
+  }),
+);
 
 if (isVercel) {
   app.use(async (_req, _res, next) => {
