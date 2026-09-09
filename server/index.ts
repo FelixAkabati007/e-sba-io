@@ -32,6 +32,7 @@ import organizationsRouter from "./routes/organizations";
 import billingRouter from "./routes/billing";
 import { seedAuth } from "./services/auth";
 import { initAttendanceDB } from "./services/attendance";
+import { ensureAuditSchema } from "./services/audit";
 
 const isVercel = !!process.env.VERCEL;
 
@@ -41,6 +42,7 @@ async function ensureInitialized(): Promise<void> {
     initPromise = (async () => {
       await seedAuth();
       await initAttendanceDB();
+      await ensureAuditSchema();
     })().catch((err) => {
       console.error("Initialisation failed", err);
       initPromise = null;
@@ -51,6 +53,16 @@ async function ensureInitialized(): Promise<void> {
 
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
+app.use((req, res, next) => {
+  const requestId = req.header("x-request-id") || crypto.randomUUID();
+  res.setHeader("x-request-id", requestId);
+  res.locals.requestId = requestId;
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    console.info(JSON.stringify({ requestId, method: req.method, path: req.path, status: res.statusCode, durationMs: Date.now() - startedAt }));
+  });
+  next();
+});
 
 // Version Header Middleware for Client-Server Skew Detection
 app.use((_req, res, next) => {
@@ -102,8 +114,9 @@ app.use(
     const isUploadErr =
       e?.name === "MulterError" || msg.toLowerCase().includes("invalid file");
     const status = isUploadErr ? 400 : 500;
+    const requestId = res.locals.requestId;
     try {
-      res.status(status).json({ error: msg });
+      res.status(status).json({ error: isUploadErr ? msg : "Internal server error", requestId });
     } catch {
       res.status(500).json({ error: "Server error" });
     }
@@ -115,7 +128,7 @@ app.get("/api/db/health", async (_req: Request, res: Response) => {
     const client = await pool.connect();
     const { rows } = await client.query("SELECT 1 AS ok");
     client.release();
-    res.json({ ok: true, rows });
+    res.json({ ok: true, rows, version: process.env.npm_package_version || "1.0.0", timestamp: new Date().toISOString() });
   } catch (e) {
     const err = e as Error;
     res.status(500).json({ ok: false, error: err.message || "DB error" });
