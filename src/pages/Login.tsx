@@ -115,7 +115,17 @@ const Login: React.FC = () => {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm text-slate-400">
+          <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <p className="font-semibold">Admin login details</p>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+              <dt className="font-medium">Username</dt>
+              <dd className="font-mono">admin</dd>
+              <dt className="font-medium">Password</dt>
+              <dd className="font-mono">Admin123</dd>
+            </dl>
+          </div>
+
+          <div className="mt-4 text-center text-sm text-slate-400">
             Contact administrator if you forgot your credentials.
           </div>
         </div>
