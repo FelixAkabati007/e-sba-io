@@ -9,7 +9,13 @@ const { Pool } = pg;
 (() => {
   const here = typeof __dirname === "string" ? __dirname : process.cwd();
   const roots = [process.cwd(), path.resolve(here, "..", "..")];
-  const files = [".env", ".env.development", ".env.local", ".env.production"];
+  const files = [
+    ".env",
+    ".env.development",
+    ".env.development.local",
+    ".env.local",
+    ".env.production",
+  ];
   for (const r of roots) {
     for (const f of files) {
       const p = path.join(r, f);
