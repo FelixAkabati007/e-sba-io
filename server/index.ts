@@ -29,6 +29,7 @@ import studentsRouter from "./routes/students";
 import progressRouter from "./routes/progress";
 import attendanceRouter from "./routes/attendance";
 import organizationsRouter from "./routes/organizations";
+import billingRouter from "./routes/billing";
 import { seedAuth } from "./services/auth";
 import { initAttendanceDB } from "./services/attendance";
 
@@ -77,6 +78,7 @@ app.use("/api/blobdb", blobdbRouter);
 app.use("/api/progress", progressRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/organizations", organizationsRouter);
+app.use("/api/billing", billingRouter);
 app.use("/api/sync", syncRouter);
 // app.use("/api/assessrepo", assessRepoRouter); // Deprecated in favor of direct SQL
 
