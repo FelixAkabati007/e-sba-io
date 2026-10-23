@@ -32,29 +32,7 @@ function baseUrl(): string {
 }
 
 function authHeader(): Record<string, string> {
-  try {
-    const token =
-      typeof localStorage !== "undefined"
-        ? localStorage.getItem("API_AUTH_TOKEN") ||
-          localStorage.getItem("token") ||
-          undefined
-        : undefined;
-    const up =
-      typeof localStorage !== "undefined"
-        ? localStorage.getItem("UPLOAD_TOKEN") || undefined
-        : undefined;
-    const down =
-      typeof localStorage !== "undefined"
-        ? localStorage.getItem("DOWNLOAD_TOKEN") || undefined
-        : undefined;
-    const hdrs: Record<string, string> = {};
-    if (token) hdrs.Authorization = `Bearer ${token}`;
-    if (up) hdrs["x-upload-token"] = up;
-    if (down) hdrs["x-download-token"] = down;
-    return hdrs;
-  } catch {
-    return {};
-  }
+  return {};
 }
 
 export async function request<T>(
@@ -175,6 +153,7 @@ async function uploadFile<T>(
       const resp = await fetch(url, {
         method: "POST",
         headers: hdrs,
+        credentials: "include",
         body: fd,
       });
       const ct = resp.headers.get("content-type") || "";
@@ -202,6 +181,15 @@ async function uploadFile<T>(
 }
 
 export const apiClient = {
+  async getOnboarding() {
+    return request<{ organizationId: number; completedSteps: string[]; dismissed: boolean; steps: Array<{ id: string; label: string }> }>("/onboarding", "GET");
+  },
+  async completeOnboardingStep(step: string) {
+    return request<void>("/onboarding/progress", "POST", { step });
+  },
+  async dismissOnboarding() {
+    return request<void>("/onboarding/dismiss", "POST");
+  },
   async getClassAttendance(q: {
     className: string;
     academicYear: string;

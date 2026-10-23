@@ -5,7 +5,7 @@ import multer, { FileFilterCallback, MulterError } from "multer";
 import path from "path";
 import crypto from "crypto";
 import fs from "fs";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import {
   buildAssessmentTemplateXLSX,
   buildAssessmentTemplateCSV,
@@ -28,8 +28,12 @@ import assessmentsRouter from "./routes/assessments";
 import studentsRouter from "./routes/students";
 import progressRouter from "./routes/progress";
 import attendanceRouter from "./routes/attendance";
+import organizationsRouter from "./routes/organizations";
+import billingRouter from "./routes/billing";
+import onboardingRouter from "./routes/onboarding";
 import { seedAuth } from "./services/auth";
 import { initAttendanceDB } from "./services/attendance";
+import { ensureAuditSchema } from "./services/audit";
 
 const isVercel = !!process.env.VERCEL;
 
@@ -39,6 +43,7 @@ async function ensureInitialized(): Promise<void> {
     initPromise = (async () => {
       await seedAuth();
       await initAttendanceDB();
+      await ensureAuditSchema();
     })().catch((err) => {
       console.error("Initialisation failed", err);
       initPromise = null;
@@ -48,7 +53,18 @@ async function ensureInitialized(): Promise<void> {
 }
 
 const app = express();
+app.set("trust proxy", 1);
 app.use(cors({ origin: true, credentials: true }));
+app.use((req, res, next) => {
+  const requestId = req.header("x-request-id") || crypto.randomUUID();
+  res.setHeader("x-request-id", requestId);
+  res.locals.requestId = requestId;
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    console.info(JSON.stringify({ requestId, method: req.method, path: req.path, status: res.statusCode, durationMs: Date.now() - startedAt }));
+  });
+  next();
+});
 
 // Version Header Middleware for Client-Server Skew Detection
 app.use((_req, res, next) => {
@@ -57,7 +73,17 @@ app.use((_req, res, next) => {
 });
 
 app.use(express.json({ limit: "5mb" }));
-app.use(rateLimit({ windowMs: 60 * 1000, max: 60 }));
+app.use(
+  rateLimit({
+    windowMs: 60 * 1000,
+    max: 60,
+    keyGenerator: (req) => ipKeyGenerator(req.ip || req.socket.remoteAddress || "unknown"),
+    validate: {
+      xForwardedForHeader: false,
+      forwardedHeader: false,
+    },
+  }),
+);
 
 if (isVercel) {
   app.use(async (_req, _res, next) => {
@@ -75,6 +101,9 @@ app.use("/api/students", studentsRouter);
 app.use("/api/blobdb", blobdbRouter);
 app.use("/api/progress", progressRouter);
 app.use("/api/attendance", attendanceRouter);
+app.use("/api/organizations", organizationsRouter);
+app.use("/api/billing", billingRouter);
+app.use("/api/onboarding", onboardingRouter);
 app.use("/api/sync", syncRouter);
 // app.use("/api/assessrepo", assessRepoRouter); // Deprecated in favor of direct SQL
 
@@ -98,8 +127,9 @@ app.use(
     const isUploadErr =
       e?.name === "MulterError" || msg.toLowerCase().includes("invalid file");
     const status = isUploadErr ? 400 : 500;
+    const requestId = res.locals.requestId;
     try {
-      res.status(status).json({ error: msg });
+      res.status(status).json({ error: isUploadErr ? msg : "Internal server error", requestId });
     } catch {
       res.status(500).json({ error: "Server error" });
     }
@@ -111,7 +141,7 @@ app.get("/api/db/health", async (_req: Request, res: Response) => {
     const client = await pool.connect();
     const { rows } = await client.query("SELECT 1 AS ok");
     client.release();
-    res.json({ ok: true, rows });
+    res.json({ ok: true, rows, version: process.env.npm_package_version || "1.0.0", timestamp: new Date().toISOString() });
   } catch (e) {
     const err = e as Error;
     res.status(500).json({ ok: false, error: err.message || "DB error" });

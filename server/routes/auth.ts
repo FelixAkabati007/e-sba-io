@@ -11,6 +11,25 @@ const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
 const JWT_ISSUER = process.env.JWT_ISSUER || "e-sba";
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const SESSION_TTL_MIN = parseInt(process.env.SESSION_TTL_MIN || "120", 10);
+const SESSION_COOKIE = "e_sba_session";
+
+function isHttps(req: express.Request): boolean {
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  return req.secure || forwardedProto === "https";
+}
+
+function setSessionCookie(req: express.Request, res: express.Response, token: string) {
+  res.cookie(SESSION_COOKIE, token, {
+    httpOnly: true,
+    secure: isHttps(req),
+    sameSite: "lax",
+    path: "/",
+    maxAge: SESSION_TTL_MIN * 60 * 1000,
+  });
+}
 type DBUserRow = {
   user_id: number;
   username: string;
@@ -27,7 +46,7 @@ const HAS_DB =
   !!process.env.POSTGRES_URL ||
   !!process.env.NEON_DATABASE_URL;
 
-router.get("/csrf", (_req, res) => {
+router.get("/csrf", (req, res) => {
   const token = crypto.randomBytes(32).toString("hex");
   const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
   const sameSiteEnv = String(process.env.CSRF_SAMESITE || "").toLowerCase();
@@ -41,7 +60,8 @@ router.get("/csrf", (_req, res) => {
   const secure =
     secureEnv === "1" ||
     secureEnv === "true" ||
-    (isProd && secureEnv !== "false");
+    (isProd && secureEnv !== "false" &&
+      (req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https")));
 
   res.cookie("csrf-token", token, {
     httpOnly: false,
@@ -61,7 +81,9 @@ router.post("/login", async (req, res) => {
   const cookies: Record<string, string> = {};
   if (req.headers.cookie) {
     req.headers.cookie.split(";").forEach((cookie) => {
-      const [key, value] = cookie.trim().split("=");
+      const separator = cookie.indexOf("=");
+      const key = separator >= 0 ? cookie.slice(0, separator).trim() : cookie.trim();
+      const value = separator >= 0 ? cookie.slice(separator + 1).trim() : "";
       if (key && value) {
         try {
           cookies[key] = decodeURIComponent(value);
@@ -75,7 +97,8 @@ router.post("/login", async (req, res) => {
   const csrfCookie = String(cookies["csrf-token"] || "");
 
   if (!csrfHeader || !csrfCookie || csrfHeader !== csrfCookie) {
-    return res.status(403).json({ error: "Forbidden: CSRF validation failed" });
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(403).json({ error: "Forbidden: CSRF validation failed", code: "CSRF_MISMATCH" });
   }
 
   const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
@@ -129,8 +152,8 @@ router.post("/login", async (req, res) => {
       JWT_SECRET,
       { expiresIn: "8h" },
     );
+    setSessionCookie(req, res, token);
     return res.json({
-      token,
       user: {
         id: 0,
         username: uEnv,
@@ -184,8 +207,8 @@ router.post("/login", async (req, res) => {
       { expiresIn: `${SESSION_TTL_MIN}m` },
     );
 
+    setSessionCookie(req, res, token);
     res.json({
-      token,
       user: {
         id: user.user_id,
         username: user.username,
@@ -218,6 +241,11 @@ router.post("/login", async (req, res) => {
   } finally {
     if (client) client.release();
   }
+});
+
+router.post("/logout", (_req, res) => {
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: "lax", path: "/" });
+  res.status(204).end();
 });
 
 // Get Current User

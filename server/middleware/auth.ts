@@ -84,10 +84,17 @@ export const authenticateToken = async (
   next: NextFunction,
 ) => {
   const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : undefined;
+  const cookieToken = req.headers.cookie
+    ?.split(";")
+    .map((part) => part.trim().split("="))
+    .find(([name]) => name === "e_sba_session")?.[1];
+  const token = bearerToken || cookieToken;
 
   if (!token) {
-    return res.status(401).json({ error: "Unauthorized: No token provided" });
+    return res.status(401).json({ error: "Unauthorized" });
   }
 
   try {

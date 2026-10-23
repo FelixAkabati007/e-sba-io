@@ -252,11 +252,93 @@ export async function seedAuth() {
       }
     }
 
+    await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS organization_id INT`);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS organizations (
+        organization_id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_by INT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        deleted_at TIMESTAMPTZ
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS permissions (
+        permission_id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT ''
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS role_permissions (
+        organization_id INT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        permission_id INT NOT NULL REFERENCES permissions(permission_id) ON DELETE CASCADE,
+        PRIMARY KEY (organization_id, role, permission_id)
+      )
+    `);
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS organization_members (
+        organization_id INT NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+        user_id INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'MEMBER' CHECK (role IN ('OWNER', 'ADMIN', 'MEMBER', 'GUEST')),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (organization_id, user_id)
+      )
+    `);
+    const { rows: orgRows } = await client.query(
+      `SELECT organization_id FROM organizations WHERE deleted_at IS NULL ORDER BY organization_id LIMIT 1`,
+    );
+    let organizationId = orgRows[0]?.organization_id;
+    if (!organizationId) {
+      const { rows: createdOrg } = await client.query(
+        `INSERT INTO organizations (name) VALUES ($1) RETURNING organization_id`,
+        ["E-SBA Organization"],
+      );
+      organizationId = createdOrg[0].organization_id;
+    }
+    await client.query(
+      `UPDATE users SET organization_id = $1 WHERE organization_id IS NULL`,
+      [organizationId],
+    );
+    await client.query(`
+      INSERT INTO organization_members (organization_id, user_id, role)
+      SELECT organization_id, user_id,
+        CASE WHEN role = 'HEAD' THEN 'OWNER' ELSE 'MEMBER' END
+      FROM users
+      WHERE organization_id = $1
+      ON CONFLICT (organization_id, user_id) DO NOTHING
+    `, [organizationId]);
+
     // Seed Head user with requested credentials
     await client.query(
       "INSERT INTO users (username, password_hash, full_name, role) VALUES ($1, $2, $3, $4) ON CONFLICT (username) DO NOTHING",
       ["head", defaultPass, "Head Master", "HEAD"]
     );
+    await client.query(`
+      INSERT INTO organization_members (organization_id, user_id, role)
+      SELECT organization_id, user_id,
+        CASE WHEN role = 'HEAD' THEN 'OWNER' ELSE 'MEMBER' END
+      FROM users
+      WHERE organization_id IS NOT NULL
+      ON CONFLICT (organization_id, user_id) DO NOTHING
+    `);
+    const permissionNames = [
+      "organizations.read", "organizations.manage", "members.read", "members.manage",
+      "students.read", "students.manage", "assessments.read", "assessments.manage",
+      "reports.read", "billing.read", "billing.manage", "audit.read",
+    ];
+    for (const name of permissionNames) {
+      await client.query(`INSERT INTO permissions (name) VALUES ($1) ON CONFLICT (name) DO NOTHING`, [name]);
+    }
+    await client.query(`
+      INSERT INTO role_permissions (organization_id, role, permission_id)
+      SELECT $1, roles.role, p.permission_id
+      FROM (VALUES ('OWNER'), ('ADMIN'), ('MEMBER'), ('GUEST')) AS roles(role)
+      CROSS JOIN permissions p
+      WHERE roles.role IN ('OWNER', 'ADMIN') OR p.name IN ('organizations.read', 'members.read', 'students.read', 'assessments.read', 'reports.read')
+      ON CONFLICT DO NOTHING
+    `, [organizationId]);
 
     await client.query("COMMIT");
   } catch (e) {
