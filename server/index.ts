@@ -5,7 +5,7 @@ import multer, { FileFilterCallback, MulterError } from "multer";
 import path from "path";
 import crypto from "crypto";
 import fs from "fs";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import {
   buildAssessmentTemplateXLSX,
   buildAssessmentTemplateCSV,
@@ -77,7 +77,7 @@ app.use(
   rateLimit({
     windowMs: 60 * 1000,
     max: 60,
-    keyGenerator: (req) => req.ip || req.socket.remoteAddress || "unknown",
+    keyGenerator: (req) => ipKeyGenerator(req.ip || req.socket.remoteAddress || "unknown"),
     validate: {
       xForwardedForHeader: false,
       forwardedHeader: false,
