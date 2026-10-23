@@ -22,14 +22,40 @@ function isHttps(req: express.Request): boolean {
   return req.secure || forwardedProto === "https";
 }
 
+function serializeCookie(
+  name: string,
+  value: string,
+  options: {
+    httpOnly?: boolean;
+    secure?: boolean;
+    sameSite?: "lax" | "strict" | "none";
+    path?: string;
+    maxAge?: number;
+  } = {},
+): string {
+  const parts = [`${name}=${encodeURIComponent(value)}`];
+  if (options.maxAge !== undefined) parts.push(`Max-Age=${Math.floor(options.maxAge / 1000)}`);
+  if (options.httpOnly) parts.push("HttpOnly");
+  if (options.secure) parts.push("Secure");
+  if (options.sameSite) parts.push(`SameSite=${options.sameSite[0].toUpperCase()}${options.sameSite.slice(1)}`);
+  if (options.path) parts.push(`Path=${options.path}`);
+  return parts.join("; ");
+}
+
+function appendCookie(res: express.Response, cookie: string): void {
+  const existing = res.getHeader("Set-Cookie");
+  const values = Array.isArray(existing) ? existing.map(String) : existing ? [String(existing)] : [];
+  res.setHeader("Set-Cookie", [...values, cookie]);
+}
+
 function setSessionCookie(req: express.Request, res: express.Response, token: string) {
-  res.cookie(SESSION_COOKIE, token, {
+  appendCookie(res, serializeCookie(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: isHttps(req),
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_MIN * 60 * 1000,
-  });
+  }));
 }
 type DBUserRow = {
   user_id: number;
@@ -64,13 +90,13 @@ router.get("/csrf", (req, res) => {
     (isProd && secureEnv !== "false" &&
       (req.secure || String(req.headers["x-forwarded-proto"] || "").includes("https")));
 
-  res.cookie("csrf-token", token, {
+  appendCookie(res, serializeCookie("csrf-token", token, {
     httpOnly: false,
     secure,
     sameSite,
     path: "/",
     maxAge: 30 * 60 * 1000,
-  });
+  }));
   res.json({ token });
 });
 
@@ -248,7 +274,12 @@ router.post("/login", async (req, res) => {
 });
 
 router.post("/logout", (_req, res) => {
-  res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: "lax", path: "/" });
+  appendCookie(res, serializeCookie(SESSION_COOKIE, "", {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  }));
   res.status(204).end();
 });
 
