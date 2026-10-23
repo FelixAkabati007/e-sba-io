@@ -44,10 +44,7 @@ async function ensureInitialized(): Promise<void> {
       await seedAuth();
       await initAttendanceDB();
       await ensureAuditSchema();
-    })().catch((err) => {
-      console.error("Initialisation failed", err);
-      initPromise = null;
-    });
+    })();
   }
   await initPromise;
 }
@@ -77,7 +74,7 @@ app.use(
   rateLimit({
     windowMs: 60 * 1000,
     max: 60,
-    keyGenerator: (req) => ipKeyGenerator(req.ip ?? "unknown"),
+    keyGenerator: (req) => ipKeyGenerator(req.ip || "unknown"),
     validate: {
       xForwardedForHeader: false,
       forwardedHeader: false,

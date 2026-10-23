@@ -50,10 +50,6 @@ export async function request<T>(
     ...(headers || {}),
   } as Record<string, string>;
   const useCredentials = "include";
-  const devFallbackUrl =
-    base === "/api" && typeof window !== "undefined"
-      ? `http://127.0.0.1:3001/api${path.startsWith("/") ? path : `/${path}`}`
-      : null;
   async function fetchOnce(u: string): Promise<T> {
     const controller = new AbortController();
     const timeoutMs = 15000;
@@ -114,15 +110,7 @@ export async function request<T>(
 
       logger.warn("api_request_retry", { path, attempt, msg, isRetryable });
 
-      if (attempt === 0 && devFallbackUrl) {
-        try {
-          return await fetchOnce(devFallbackUrl);
-        } catch (e2) {
-          lastErr = e2 as Error;
-        }
-      } else {
-        lastErr = e as Error;
-      }
+      lastErr = e as Error;
 
       if (attempt === retries || !isRetryable) throw lastErr || e;
       await new Promise((r) => setTimeout(r, backoff(attempt)));
