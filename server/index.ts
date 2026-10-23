@@ -42,8 +42,16 @@ async function ensureInitialized(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       await seedAuth();
-      await initAttendanceDB();
-      await ensureAuditSchema();
+      try {
+        await initAttendanceDB();
+      } catch (error) {
+        console.error("Attendance initialization failed; auth remains available", error);
+      }
+      try {
+        await ensureAuditSchema();
+      } catch (error) {
+        console.error("Audit schema initialization failed; auth remains available", error);
+      }
     })();
   }
   await initPromise;
@@ -82,12 +90,24 @@ app.use(
   }),
 );
 
-if (isVercel) {
-  app.use(async (_req, _res, next) => {
-    await ensureInitialized();
-    next();
-  });
-}
+  if (isVercel) {
+    app.use(async (req, res, next) => {
+      try {
+        await ensureInitialized();
+        next();
+      } catch (error) {
+        const requestId = res.locals.requestId;
+        console.error("Serverless initialization failed", {
+          requestId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        res.status(503).json({
+          error: "Service initialization failed",
+          requestId,
+        });
+      }
+    });
+  }
 
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api/auth", authRouter);
