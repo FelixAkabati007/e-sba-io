@@ -14,7 +14,8 @@ export interface AuthRequest extends Request {
   };
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
+const JWT_SECRET =
+  process.env.JWT_SECRET || process.env.STACK_SECRET_SERVER_KEY || "super-secret-key-change-this";
 const JWT_ISSUER = process.env.JWT_ISSUER || "e-sba";
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const STACK_JWKS_URL =

@@ -7,7 +7,8 @@ import { AuthRequest, authenticateToken } from "../middleware/auth";
 import { PoolClient } from "pg";
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-change-this";
+const JWT_SECRET =
+  process.env.JWT_SECRET || process.env.STACK_SECRET_SERVER_KEY || "super-secret-key-change-this";
 const JWT_ISSUER = process.env.JWT_ISSUER || "e-sba";
 const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "e-sba-users";
 const SESSION_TTL_MIN = parseInt(process.env.SESSION_TTL_MIN || "120", 10);
@@ -102,10 +103,13 @@ router.post("/login", async (req, res) => {
   }
 
   const isProd = String(process.env.NODE_ENV).toLowerCase() === "production";
-  const currentSecret =
-    process.env.JWT_SECRET || "super-secret-key-change-this";
-  const misconfiguredSecret =
-    isProd && currentSecret === "super-secret-key-change-this";
+  const hasConfiguredSecret = Boolean(
+    process.env.JWT_SECRET || process.env.STACK_SECRET_SERVER_KEY,
+  );
+  const currentSecret = hasConfiguredSecret
+    ? process.env.JWT_SECRET || process.env.STACK_SECRET_SERVER_KEY!
+    : "super-secret-key-change-this";
+  const misconfiguredSecret = isProd && !hasConfiguredSecret;
   if (misconfiguredSecret && HAS_DB) {
     return res
       .status(503)
