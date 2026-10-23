@@ -145,7 +145,12 @@ app.get("/api/db/health", async (_req: Request, res: Response) => {
   }
 });
 
-const uploadDir = path.join(process.cwd(), "uploads", "assessmentSheets");
+const uploadDir = isVercel
+  ? path.join("/tmp", "e-sba", "assessmentSheets")
+  : path.join(process.cwd(), "uploads", "assessmentSheets");
+
+// Vercel functions can only write to /tmp. Local development keeps the
+// existing project uploads directory so the desktop workflow is unchanged.
 fs.mkdirSync(uploadDir, { recursive: true });
 
 const storage = multer.diskStorage({
